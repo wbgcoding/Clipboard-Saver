@@ -79,9 +79,7 @@ html, body {
   flex-direction: column;
   gap: 4px;
   width: 100%;
-  /* Auto height: the panel only covers its items, leftover window space
-     stays transparent (no empty row at the bottom). */
-  height: auto;
+  height: auto; /* leftover window space stays transparent */
   padding: 8px;
   border-radius: 14px;
   background: var(--menu-bg);

@@ -13,16 +13,16 @@ const menu = document.getElementById("menu");
 
 // i18n: follows the language setting ("auto" -> OS language). EN fallback.
 const TXT = {
-  en: { copied: "Copied!", size: "Size", edit: "Edit prompt", remove: "Remove" },
-  de: { copied: "Kopiert!", size: "Größe", edit: "Prompt bearbeiten", remove: "Entfernen" },
-  es: { copied: "¡Copiado!", size: "Tamaño", edit: "Editar prompt", remove: "Quitar" },
-  fr: { copied: "Copié !", size: "Taille", edit: "Modifier le prompt", remove: "Retirer" },
-  it: { copied: "Copiato!", size: "Dimensione", edit: "Modifica prompt", remove: "Rimuovi" },
-  pt: { copied: "Copiado!", size: "Tamanho", edit: "Editar prompt", remove: "Remover" },
-  pl: { copied: "Skopiowano!", size: "Rozmiar", edit: "Edytuj prompt", remove: "Usuń" },
-  ru: { copied: "Скопировано!", size: "Размер", edit: "Изменить промпт", remove: "Убрать" },
-  zh: { copied: "已复制！", size: "大小", edit: "编辑提示词", remove: "移除" },
-  ja: { copied: "コピーしました！", size: "サイズ", edit: "プロンプトを編集", remove: "削除" },
+  en: { copied: "Copied!", size: "Size", edit: "Edit text", remove: "Remove" },
+  de: { copied: "Kopiert!", size: "Größe", edit: "Text bearbeiten", remove: "Entfernen" },
+  es: { copied: "¡Copiado!", size: "Tamaño", edit: "Editar texto", remove: "Quitar" },
+  fr: { copied: "Copié !", size: "Taille", edit: "Modifier le texte", remove: "Retirer" },
+  it: { copied: "Copiato!", size: "Dimensione", edit: "Modifica testo", remove: "Rimuovi" },
+  pt: { copied: "Copiado!", size: "Tamanho", edit: "Editar texto", remove: "Remover" },
+  pl: { copied: "Skopiowano!", size: "Rozmiar", edit: "Edytuj tekst", remove: "Usuń" },
+  ru: { copied: "Скопировано!", size: "Размер", edit: "Изменить текст", remove: "Убрать" },
+  zh: { copied: "已复制！", size: "大小", edit: "编辑文本", remove: "移除" },
+  ja: { copied: "コピーしました！", size: "サイズ", edit: "テキストを編集", remove: "削除" },
 };
 
 // Same font catalog as the grid tiles (main.js) — pill text matches the tiles.

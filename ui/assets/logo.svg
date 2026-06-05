@@ -1,24 +1,37 @@
 <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fbbf24"/>
-      <stop offset="0.55" stop-color="#f59e0b"/>
-      <stop offset="1" stop-color="#b45309"/>
+      <stop offset="0" stop-color="#fef08a"/>
+      <stop offset="0.5" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#ca8a04"/>
     </linearGradient>
     <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <rect x="1.5" y="1.5" width="29" height="29" rx="8.5" fill="url(#bg)"/>
   <rect x="1.5" y="1.5" width="29" height="14" rx="8.5" fill="url(#shine)"/>
   <g transform="translate(1.6 1.6) scale(0.9)">
-    <rect x="8.5" y="6.9" width="15" height="18.8" rx="1.4" fill="#ffffff" fill-opacity="0.95"/>
-    <rect x="12.5" y="5.4" width="7" height="4" rx="1.1" fill="#ffffff" fill-opacity="0.95"/>
-    <rect x="13.8" y="6.2" width="4.5" height="2.3" rx="0.6" fill="#b45309" fill-opacity="0.35"/>
-    <rect x="10.5" y="13.5" width="11" height="1.25" rx="0.6" fill="#b45309" fill-opacity="0.45"/>
-    <rect x="10.5" y="16" width="8.5" height="1.25" rx="0.6" fill="#b45309" fill-opacity="0.30"/>
-    <rect x="10.5" y="18.5" width="9.8" height="1.25" rx="0.6" fill="#b45309" fill-opacity="0.30"/>
-    <path d="M24.6 3.2l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7Z" fill="#fff3cd"/>
+    <!-- Notepad body -->
+    <rect x="7" y="8" width="17" height="19.8" rx="1.1" fill="#ffffff" fill-opacity="0.96"/>
+    <!-- Spiral holes -->
+    <circle cx="10.4" cy="8" r="0.9" fill="#ca8a04"/>
+    <circle cx="10.4" cy="8" r="0.45" fill="#fefce8"/>
+    <circle cx="14" cy="8" r="0.9" fill="#ca8a04"/>
+    <circle cx="14" cy="8" r="0.45" fill="#fefce8"/>
+    <circle cx="17.6" cy="8" r="0.9" fill="#ca8a04"/>
+    <circle cx="17.6" cy="8" r="0.45" fill="#fefce8"/>
+    <circle cx="21.2" cy="8" r="0.9" fill="#ca8a04"/>
+    <circle cx="21.2" cy="8" r="0.45" fill="#fefce8"/>
+    <!-- Red margin line -->
+    <rect x="10.1" y="10.1" width="0.2" height="15.7" rx="0.1" fill="#ef4444" fill-opacity="0.45"/>
+    <!-- Ruled lines -->
+    <rect x="11.1" y="12.2" width="11.1" height="0.9" rx="0.45" fill="#ca8a04" fill-opacity="0.35"/>
+    <rect x="11.1" y="14.5" width="8.8" height="0.9" rx="0.45" fill="#ca8a04" fill-opacity="0.25"/>
+    <rect x="11.1" y="16.8" width="10" height="0.9" rx="0.45" fill="#ca8a04" fill-opacity="0.25"/>
+    <rect x="11.1" y="19.1" width="7.8" height="0.9" rx="0.45" fill="#ca8a04" fill-opacity="0.20"/>
+    <!-- Spark -->
+    <path d="M25.4 3.2l.65 1.6 1.6.65-1.6.65-.65 1.6-.65-1.6-1.6-.65 1.6-.65Z" fill="#fefce8"/>
   </g>
 </svg>

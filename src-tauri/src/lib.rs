@@ -14,7 +14,7 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 
-// Bring the main window back from the tray — always at the saved size/position.
+// Bring the main window back from the tray â€” always at the saved size/position.
 fn show_main(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         if let Some(state) = app.try_state::<Db>() {
@@ -159,6 +159,8 @@ const GRID_MAX: u32 = 20;
 const MAX_VIEWS: usize = 20;
 const FLOAT_W: f64 = 160.0;
 const FLOAT_H: f64 = 48.0;
+const FLOAT_MENU_W: f64 = 220.0;
+const FLOAT_MENU_H: f64 = 168.0;
 const AUTOSTART_KEY: &str = "PromptSaver";
 
 fn grid_key(cols: u32, rows: u32) -> String {
@@ -201,15 +203,15 @@ fn resolve_lang(pref: &str) -> &'static str {
 // Tray menu labels per language.
 fn tray_labels(lang: &str) -> (&'static str, &'static str) {
     match lang {
-        "de" => ("Öffnen", "Beenden"),
+        "de" => ("Ã–ffnen", "Beenden"),
         "es" => ("Abrir", "Salir"),
         "fr" => ("Ouvrir", "Quitter"),
         "it" => ("Apri", "Esci"),
         "pt" => ("Abrir", "Sair"),
-        "pl" => ("Otwórz", "Zakończ"),
-        "ru" => ("Открыть", "Выход"),
-        "zh" => ("打开", "退出"),
-        "ja" => ("開く", "終了"),
+        "pl" => ("OtwÃ³rz", "ZakoÅ„cz"),
+        "ru" => ("ÐžÑ‚ÐºÑ€Ñ‹Ñ‚ÑŒ", "Ð’Ñ‹Ñ…Ð¾Ð´"),
+        "zh" => ("æ‰“å¼€", "é€€å‡º"),
+        "ja" => ("é–‹ã", "çµ‚äº†"),
         _ => ("Open", "Quit"),
     }
 }
@@ -221,19 +223,19 @@ fn home_name(lang: &str) -> &'static str {
         "de" => "Startseite",
         "es" => "Inicio",
         "fr" => "Accueil",
-        "pt" => "Início",
-        "pl" => "Strona główna",
-        "ru" => "Главная",
-        "zh" => "主页",
-        "ja" => "ホーム",
+        "pt" => "InÃ­cio",
+        "pl" => "Strona gÅ‚Ã³wna",
+        "ru" => "Ð“Ð»Ð°Ð²Ð½Ð°Ñ",
+        "zh" => "ä¸»é¡µ",
+        "ja" => "ãƒ›ãƒ¼ãƒ ",
         _ => "Home", // en + it
     }
 }
 
 // Every possible default name -> a view still carrying one was never renamed.
 const HOME_NAMES: [&str; 9] = [
-    "Home", "Startseite", "Inicio", "Accueil", "Início",
-    "Strona główna", "Главная", "主页", "ホーム",
+    "Home", "Startseite", "Inicio", "Accueil", "InÃ­cio",
+    "Strona gÅ‚Ã³wna", "Ð“Ð»Ð°Ð²Ð½Ð°Ñ", "ä¸»é¡µ", "ãƒ›ãƒ¼ãƒ ",
 ];
 
 impl Settings {
@@ -399,9 +401,7 @@ fn open_floating(app: &AppHandle, prompt: &Prompt) {
         return;
     }
 
-    // IMPORTANT: never call Tauri window APIs (default_pos -> primary_monitor)
-    // while holding the Db lock — on the main thread that can pump the message
-    // loop into our own event handlers, which lock the same mutex = deadlock.
+    // Never call Tauri window APIs while holding the Db lock (deadlock risk).
     let (saved, scale, count) = {
         let state: State<Db> = app.state();
         let store = lock(&state);
@@ -466,11 +466,6 @@ fn close_floating_window(app: &AppHandle, id: &str) {
 }
 
 // ---------- Prompt commands ----------
-
-#[tauri::command]
-fn list_prompts(state: State<Db>) -> Vec<Prompt> {
-    lock(&state).prompts.clone()
-}
 
 #[tauri::command]
 fn get_prompt(state: State<Db>, id: String) -> Option<Prompt> {
@@ -779,10 +774,8 @@ fn copy_prompt(state: State<Db>, id: String) -> bool {
     }
 }
 
-// MUST be async: Tauri v2 runs sync commands on the main thread, and building
-// a webview window there blocks the message loop WebView2 needs to finish the
-// creation — a guaranteed deadlock on Windows. As an async command this runs
-// on a worker thread and Tauri dispatches the creation to the event loop.
+// Must stay async: window creation from a sync command deadlocks on Windows
+// (sync commands run on the main thread, which WebView2 needs free).
 #[tauri::command]
 async fn toggle_floating(app: AppHandle, state: State<'_, Db>, id: String) -> Result<bool, String> {
     if app.get_webview_window(&flabel(&id)).is_some() {
@@ -840,7 +833,7 @@ async fn resize_float_menu(
     let scale = float_scale_of(&lock(&state).settings, &id);
     if let Some(win) = app.get_webview_window(&flabel(&id)) {
         let (w, h) = if open {
-            ((FLOAT_W * scale).max(220.0), 168.0)
+            ((FLOAT_W * scale).max(FLOAT_MENU_W), FLOAT_MENU_H)
         } else {
             (FLOAT_W * scale, FLOAT_H * scale)
         };
@@ -855,11 +848,6 @@ async fn edit_prompt_request(app: AppHandle, id: String) -> Result<(), String> {
     show_main(&app);
     let _ = app.emit("edit-prompt", id);
     Ok(())
-}
-
-#[tauri::command]
-fn is_floating_open(app: AppHandle, id: String) -> bool {
-    app.get_webview_window(&flabel(&id)).is_some()
 }
 
 // ---------- Background / autostart ----------
@@ -1310,9 +1298,8 @@ fn centered_on_primary(main: &tauri::WebviewWindow, width: u32, height: u32) -> 
     WindowGeom { x: 100, y: 100, width, height }
 }
 
-// First start ONLY: 50% of the primary monitor, centered. Afterwards the saved
-// size is always kept; if its monitor is gone, only the position is re-centered
-// on the primary monitor.
+// First start: 50% of the primary monitor, centered. Afterwards the saved size
+// is kept; if its monitor is gone, only the position is re-centered.
 fn resolve_geometry(main: &tauri::WebviewWindow, saved: Option<WindowGeom>) -> WindowGeom {
     if let Some(g) = saved {
         if g.width > 0 && g.height > 0 {
@@ -1355,10 +1342,8 @@ fn update_geom<F: FnOnce(&mut WindowGeom)>(handle: &AppHandle, f: F) {
 
 // ---------- App entry ----------
 
-// The exe itself is fully portable; its only external requirement is the
-// WebView2 runtime (preinstalled on Windows 11 and current Windows 10).
-// If it is missing, offer the official Microsoft installer instead of
-// failing with a cryptic error.
+// WebView2 runtime is the only external requirement; offer the official
+// installer if it is missing instead of failing with a cryptic error.
 #[cfg(windows)]
 fn ensure_webview2() -> bool {
     if tauri::webview_version().is_ok() {
@@ -1367,12 +1352,12 @@ fn ensure_webview2() -> bool {
     let (title, msg) = if is_german() {
         (
             "WebView2 Runtime fehlt",
-            "Prompt Saver benötigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Prompt Saver einfach erneut starten.",
+            "Clipboard-Saver benÃ¶tigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Prompt Saver einfach erneut starten.",
         )
     } else {
         (
             "WebView2 runtime missing",
-            "Prompt Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Prompt Saver again afterwards.",
+            "Clipboard-Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Prompt Saver again afterwards.",
         )
     };
     let answer = rfd::MessageDialog::new()
@@ -1566,7 +1551,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            list_prompts,
             get_prompt,
             add_prompt,
             update_prompt,
@@ -1589,7 +1573,6 @@ pub fn run() {
             set_float_scale,
             resize_float_menu,
             edit_prompt_request,
-            is_floating_open,
             set_minimize_on_close,
             set_autostart,
             set_start_minimized,

@@ -1,0 +1,34 @@
+name: Sync from upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # every Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream (Prompt-Saver)
+        run: |
+          git remote add upstream https://github.com/wbgcoding/Prompt-Saver.git
+          git fetch upstream
+
+      - name: Merge upstream changes
+        # On conflict our branding values win (-X ours keeps productName, identifier, theme)
+        run: git merge upstream/master --no-edit -X ours
+
+      - name: Push
+        run: git push origin master

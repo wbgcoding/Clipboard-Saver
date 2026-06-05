@@ -1,10 +1,10 @@
 @echo off
 setlocal
-title Prompt Saver - Build
+title Clipboard-Saver - Build
 cd /d "%~dp0"
 
 echo ============================================
-echo  Prompt Saver - Portable EXE Build
+echo  Clipboard-Saver - Portable EXE Build
 echo ============================================
 echo.
 
@@ -50,7 +50,7 @@ echo.
 call npm run build -- --no-bundle
 if errorlevel 1 goto :fail
 
-set "EXE=%~dp0src-tauri\target\release\prompt-saver.exe"
+set "EXE=%~dp0src-tauri\target\release\clipboard-saver.exe"
 if not exist "%EXE%" (
     echo [ERROR] Build finished but exe not found: %EXE%
     goto :fail

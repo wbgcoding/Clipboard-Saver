@@ -1,0 +1,11 @@
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\cargo_metadata-0b826acc92fb1c4b.d: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\dependency.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\diagnostic.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\errors.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\messages.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libcargo_metadata-0b826acc92fb1c4b.rlib: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\dependency.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\diagnostic.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\errors.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\messages.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libcargo_metadata-0b826acc92fb1c4b.rmeta: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\dependency.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\diagnostic.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\errors.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\messages.rs
+
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\lib.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\dependency.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\diagnostic.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\errors.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo_metadata-0.19.2\src\messages.rs:

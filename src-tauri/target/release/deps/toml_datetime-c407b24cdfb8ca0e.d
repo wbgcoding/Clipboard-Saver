@@ -1,0 +1,10 @@
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\toml_datetime-c407b24cdfb8ca0e.d: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\datetime.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\de.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\ser.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libtoml_datetime-c407b24cdfb8ca0e.rlib: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\datetime.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\de.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\ser.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libtoml_datetime-c407b24cdfb8ca0e.rmeta: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\datetime.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\de.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\ser.rs
+
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\lib.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\datetime.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\de.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_datetime-1.1.1+spec-1.1.0\src\ser.rs:

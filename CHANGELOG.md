@@ -1,15 +1,15 @@
 # Changelog
 
-All notable changes to **Prompt Saver**. Download the latest version from the
+All notable changes to **Clipboard-Saver**. Download the latest version from the
 [releases page](../../releases/latest).
 
 ## 1.3.3 — HotFix (2026-06-04)
 
 ### Fixed
-- Tile text no longer shifts while dragging a prompt — the drag ghost now
+- Tile text no longer shifts while dragging a tile — the drag ghost now
   follows the cursor exactly and the picked-up tile keeps its size
 - Letters with descenders (g, j, p, y) are no longer cut off at the bottom
-  edge of prompt buttons
+  edge of buttons
 
 ### Improved
 - The installer now lets you choose between **installing for all users**
@@ -21,7 +21,7 @@ All notable changes to **Prompt Saver**. Download the latest version from the
 - **Installer** (alongside the portable exe): desktop / start menu shortcuts
   and "run after install" — all pre-selected, all optional
 - **Floating button menu**: right-click a floating pill for size presets
-  (S / M / L), editing the prompt, or removing the pill
+  (S / M / L), editing the snippet, or removing the pill
 - Floating pills use the same font and text-size rules as the grid tiles
 - The default "Home" view follows the app language in all 10 languages
 - Automatic check for the WebView2 runtime with a guided one-click install
@@ -44,6 +44,6 @@ All notable changes to **Prompt Saver**. Download the latest version from the
 ## 1.1.0 (2026-06-04)
 
 - First Tauri release: ~3 MB portable exe
-- Prompt grid with free placement, multiple views, per-prompt colors,
+- Snippet grid with free placement, multiple views, per-snippet colors,
   10 languages, import/export, floating quick-copy buttons, tray mode,
   autostart

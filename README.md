@@ -1,16 +1,16 @@
-# Prompt Saver
+# Clipboard-Saver
 
-A tiny, fully offline Windows tool for storing your favorite prompts and copying them to the clipboard with a single click — from a customizable grid or from floating always-on-top buttons that work over any application.
+A tiny, fully offline Windows tool for storing your frequently used text snippets and copying them to the clipboard with a single click — from a customizable grid or from floating always-on-top buttons that work over any application.
 
-![Prompt Saver](docs/screenshot.svg)
+![Clipboard-Saver](docs/screenshot.svg)
 
 ## Features
 
-- **Prompt grid** – free placement on a per-view grid (1×1 up to 20×20, default 5×4), drag tiles anywhere, swap by dropping; layouts are remembered per grid size
-- **One-click copy** – click a tile and the prompt text is in your clipboard ("Copied!" bubble confirms)
+- **Snippet grid** – free placement on a per-view grid (1×1 up to 20×20, default 5×4), drag tiles anywhere, swap by dropping; layouts are remembered per grid size
+- **One-click copy** – click a tile and the snippet text is in your clipboard ("Copied!" bubble confirms)
 - **Multiple views** – up to 20 named pages, each with its own grid size and layout
-- **Floating buttons** – pin any prompt as a frameless, transparent, always-on-top pill; click to copy from anywhere, drag to reposition, right-click for size / edit / remove; positions survive restarts
-- **Per-prompt colors** – tint tiles and floating pills from a color palette
+- **Floating buttons** – pin any snippet as a frameless, transparent, always-on-top pill; click to copy from anywhere, drag to reposition, right-click for size / edit / remove; positions survive restarts
+- **Per-snippet colors** – tint tiles and floating pills from a color palette
 - **Auto-fit text** – tile text grows to fill the button (or pick a fixed size and one of 10 fonts)
 - **10 languages** – auto-detected from the system (EN fallback): EN, DE, ES, FR, IT, PT, PL, RU, ZH, JA
 - **Import / export** – CSV or TXT including views, layouts, colors and language; re-import restores everything
@@ -25,8 +25,8 @@ From the [latest release](../../releases/latest):
 
 | File | What it is |
 |---|---|
-| `Prompt.Saver_x64-setup.exe` | **Installer** – choose all users (admin) or current user only, desktop / start menu shortcuts and "run after install" included (all optional) |
-| `prompt-saver.exe` | **Portable** – single standalone exe, no installation |
+| `Clipboard-Saver_<version>_x64-setup.exe` | **Installer** – choose all users (admin) or current user only, desktop / start menu shortcuts and "run after install" included (all optional) |
+| `clipboard-saver.exe` | **Portable** – single standalone exe, no installation |
 
 Full version history: [CHANGELOG.md](CHANGELOG.md)
 
@@ -36,8 +36,8 @@ Both need the Microsoft WebView2 runtime (preinstalled on Windows 11 and current
 
 | Action | How |
 |---|---|
-| Save a prompt | Type it in the input line → **Save** → name + color (Ctrl+Enter works too) |
-| Copy a prompt | Click its tile ("Copied!" bubble) |
+| Save a snippet | Type it in the input line → **Save** → name + color (Ctrl+Enter works too) |
+| Copy a snippet | Click its tile ("Copied!" bubble) |
 | Move a tile | Drag it to any grid cell; drop on an occupied cell to swap |
 | Edit / hide / pin / delete | Right-click a tile (or hover **⋮**) |
 | Floating button | "Toggle floating button" in the tile menu; right-click the pill for options |
@@ -57,8 +57,8 @@ or manually:
 ```sh
 npm install
 npm run build              # portable exe + NSIS installer
-# -> src-tauri/target/release/prompt-saver.exe
-# -> src-tauri/target/release/bundle/nsis/Prompt Saver_<version>_x64-setup.exe
+# -> src-tauri/target/release/clipboard-saver.exe
+# -> src-tauri/target/release/bundle/nsis/Clipboard-Saver_<version>_x64-setup.exe
 ```
 
 ## Tech stack

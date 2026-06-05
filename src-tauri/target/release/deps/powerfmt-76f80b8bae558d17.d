@@ -1,0 +1,11 @@
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\powerfmt-76f80b8bae558d17.d: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\buf.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\ext.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display_impls.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libpowerfmt-76f80b8bae558d17.rlib: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\buf.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\ext.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display_impls.rs
+
+C:\Claude\Clipboard-Saver\src-tauri\target\release\deps\libpowerfmt-76f80b8bae558d17.rmeta: C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\lib.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\buf.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\ext.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display.rs C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display_impls.rs
+
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\lib.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\buf.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\ext.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display.rs:
+C:\Users\Ben\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\powerfmt-0.2.0\src\smart_display_impls.rs:

@@ -18,6 +18,7 @@ A tiny, fully offline Windows tool for storing your frequently used text snippet
 - **Import / export** – CSV or TXT including views, layouts, colors and language; re-import restores everything
 - **Runs in the background** – optional minimize-to-tray on close, autostart at login (optionally minimized)
 - **Auto updates** – daily check for new releases with one-click install (also manually via Settings → Updates)
+- **Distraction-free mode** – hide the top and bottom bars with subtle arrows; the grid takes over the freed space
 - **Light / dark / system theme** with live OS detection
 - **100% local** – data stored as JSON in `%APPDATA%`, no telemetry; the only network access is the (optional) update check
 - **Small** – ~7 MB exe (Tauri / Rust), uses the Windows WebView2 runtime

@@ -1,0 +1,312 @@
+{
+  "/claude/Prompt Saver/.gemini/settings.json": {
+    "mtime": 1780777565.2922294,
+    "ast_hash": "f080aabf772e803c9e24b9ad0acbf2b6",
+    "semantic_hash": "f080aabf772e803c9e24b9ad0acbf2b6"
+  },
+  "/claude/Prompt Saver/.omg/state/learn-watch.json": {
+    "mtime": 1780777577.0938892,
+    "ast_hash": "44705c8438ec8cde08d2fc31c42ebdfb",
+    "semantic_hash": "44705c8438ec8cde08d2fc31c42ebdfb"
+  },
+  "/claude/Prompt Saver/package.json": {
+    "mtime": 1780741455.2958424,
+    "ast_hash": "ae334c77c33c712b242359221583995a",
+    "semantic_hash": "ae334c77c33c712b242359221583995a"
+  },
+  "/claude/Prompt Saver/src-tauri/build.rs": {
+    "mtime": 1780526774.8933656,
+    "ast_hash": "48af8f08e39b73562f866d3a50b2e88a",
+    "semantic_hash": "48af8f08e39b73562f866d3a50b2e88a"
+  },
+  "/claude/Prompt Saver/src-tauri/capabilities/default.json": {
+    "mtime": 1780526895.1868286,
+    "ast_hash": "22681947c97d0ba3a266b52bfb001253",
+    "semantic_hash": "22681947c97d0ba3a266b52bfb001253"
+  },
+  "/claude/Prompt Saver/src-tauri/src/lib.rs": {
+    "mtime": 1780776282.0146303,
+    "ast_hash": "256724f9ee0e57ea97334e058744b541",
+    "semantic_hash": "256724f9ee0e57ea97334e058744b541"
+  },
+  "/claude/Prompt Saver/src-tauri/src/main.rs": {
+    "mtime": 1780526900.4170356,
+    "ast_hash": "7e12b14dbd5428203e696fffa6690922",
+    "semantic_hash": "7e12b14dbd5428203e696fffa6690922"
+  },
+  "/claude/Prompt Saver/src-tauri/tauri.conf.json": {
+    "mtime": 1780762788.2641115,
+    "ast_hash": "0745247812c7b9aefd6182cdf9cee91b",
+    "semantic_hash": "0745247812c7b9aefd6182cdf9cee91b"
+  },
+  "/claude/Prompt Saver/ui/floating.js": {
+    "mtime": 1780776933.8514242,
+    "ast_hash": "14bce217f573020cf171e1959a0ff0e0",
+    "semantic_hash": "14bce217f573020cf171e1959a0ff0e0"
+  },
+  "/claude/Prompt Saver/ui/fonts.js": {
+    "mtime": 1780750935.3882024,
+    "ast_hash": "11c64b36de374d73026c56214dab2370",
+    "semantic_hash": "11c64b36de374d73026c56214dab2370"
+  },
+  "/claude/Prompt Saver/ui/i18n.js": {
+    "mtime": 1780773897.163597,
+    "ast_hash": "fde3b1f58ba00db1dc8876436409f3e7",
+    "semantic_hash": "fde3b1f58ba00db1dc8876436409f3e7"
+  },
+  "/claude/Prompt Saver/ui/main.js": {
+    "mtime": 1780776915.8732233,
+    "ast_hash": "9c9cfe83420173cd72b1643d29563347",
+    "semantic_hash": "9c9cfe83420173cd72b1643d29563347"
+  },
+  "/claude/Prompt Saver/ui/media.js": {
+    "mtime": 1780763752.22003,
+    "ast_hash": "cbd8426618fb3ad251096ef3c8ab0e7e",
+    "semantic_hash": "cbd8426618fb3ad251096ef3c8ab0e7e"
+  },
+  "/claude/Prompt Saver/CHANGELOG.md": {
+    "mtime": 1780741458.9811625,
+    "ast_hash": "824530d25367a3c4e4b8b9d88c7bdc52",
+    "semantic_hash": "824530d25367a3c4e4b8b9d88c7bdc52"
+  },
+  "/claude/Prompt Saver/GEMINI.md": {
+    "mtime": 1780777565.2900915,
+    "ast_hash": "82efb97a359f5c7290bf2513d14686be",
+    "semantic_hash": "82efb97a359f5c7290bf2513d14686be"
+  },
+  "/claude/Prompt Saver/README.md": {
+    "mtime": 1780741468.432599,
+    "ast_hash": "a79df63aeb90fe6c26d40ad3b58b44fa",
+    "semantic_hash": "a79df63aeb90fe6c26d40ad3b58b44fa"
+  },
+  "/claude/Prompt Saver/docs/release-notes.md": {
+    "mtime": 1780741472.661906,
+    "ast_hash": "88fcc74cefea983a898eb59dba5e066e",
+    "semantic_hash": "88fcc74cefea983a898eb59dba5e066e"
+  },
+  "/claude/Prompt Saver/ui/floating.html": {
+    "mtime": 1780773960.87573,
+    "ast_hash": "3c456242469ef4fe482776ece98f5982",
+    "semantic_hash": "3c456242469ef4fe482776ece98f5982"
+  },
+  "/claude/Prompt Saver/ui/index.html": {
+    "mtime": 1780771985.2345223,
+    "ast_hash": "b90c4d0aa8e0b179c4481c8240ced144",
+    "semantic_hash": "b90c4d0aa8e0b179c4481c8240ced144"
+  },
+  "/claude/Prompt Saver/docs/screenshot.svg": {
+    "mtime": 1780577925.8088412,
+    "ast_hash": "597e407954584a827529318bb86919a1",
+    "semantic_hash": "597e407954584a827529318bb86919a1"
+  },
+  "/claude/Prompt Saver/src-tauri/icons/128x128.png": {
+    "mtime": 1780766666.8439786,
+    "ast_hash": "f1d383c049ea3fc60516b12fef2da2da",
+    "semantic_hash": "f1d383c049ea3fc60516b12fef2da2da"
+  },
+  "/claude/Prompt Saver/src-tauri/icons/128x128@2x.png": {
+    "mtime": 1780766666.8554783,
+    "ast_hash": "85c29c10da2ebe65ef96407e4241b37f",
+    "semantic_hash": "85c29c10da2ebe65ef96407e4241b37f"
+  },
+  "/claude/Prompt Saver/src-tauri/icons/32x32.png": {
+    "mtime": 1780766666.8374794,
+    "ast_hash": "434be820f7627546db23ee34a656f7fc",
+    "semantic_hash": "434be820f7627546db23ee34a656f7fc"
+  },
+  "/claude/Prompt Saver/src-tauri/icons/64x64.png": {
+    "mtime": 1780766666.8394792,
+    "ast_hash": "bb09bf1b03a5671046c92958a3d359d0",
+    "semantic_hash": "bb09bf1b03a5671046c92958a3d359d0"
+  },
+  "/claude/Prompt Saver/src-tauri/icons/icon.png": {
+    "mtime": 1780766666.8869953,
+    "ast_hash": "5181a77f2aa0b5d60160ef7c29a01971",
+    "semantic_hash": "5181a77f2aa0b5d60160ef7c29a01971"
+  },
+  "/claude/Prompt Saver/ui/assets/icon.svg": {
+    "mtime": 1780568682.14574,
+    "ast_hash": "0ad455af85e6a4de329d4e018bbd9279",
+    "semantic_hash": "0ad455af85e6a4de329d4e018bbd9279"
+  },
+  "/claude/Prompt Saver/ui/assets/logo.svg": {
+    "mtime": 1780568698.761137,
+    "ast_hash": "0b3d10ad07e36f7a35ad6245c4661314",
+    "semantic_hash": "0b3d10ad07e36f7a35ad6245c4661314"
+  },
+  "C:\\Claude\\Prompt Saver\\package.json": {
+    "mtime": 1780741455.2958424,
+    "ast_hash": "ae334c77c33c712b242359221583995a",
+    "semantic_hash": "ae334c77c33c712b242359221583995a"
+  },
+  "C:\\Claude\\Prompt Saver\\.gemini\\settings.json": {
+    "mtime": 1780777565.2922294,
+    "ast_hash": "f080aabf772e803c9e24b9ad0acbf2b6",
+    "semantic_hash": "f080aabf772e803c9e24b9ad0acbf2b6"
+  },
+  "C:\\Claude\\Prompt Saver\\.omg\\state\\learn-watch.json": {
+    "mtime": 1780778043.099996,
+    "ast_hash": "4a012b79e7451d91d52e6a5ec94f5875",
+    "semantic_hash": "4a012b79e7451d91d52e6a5ec94f5875"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\build.rs": {
+    "mtime": 1780526774.8933656,
+    "ast_hash": "48af8f08e39b73562f866d3a50b2e88a",
+    "semantic_hash": "48af8f08e39b73562f866d3a50b2e88a"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\tauri.conf.json": {
+    "mtime": 1780762788.2641115,
+    "ast_hash": "0745247812c7b9aefd6182cdf9cee91b",
+    "semantic_hash": "0745247812c7b9aefd6182cdf9cee91b"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\capabilities\\default.json": {
+    "mtime": 1780526895.1868286,
+    "ast_hash": "22681947c97d0ba3a266b52bfb001253",
+    "semantic_hash": "22681947c97d0ba3a266b52bfb001253"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\src\\lib.rs": {
+    "mtime": 1780784288.958171,
+    "ast_hash": "ddb7c3031752160637e8a786ba01a3d7",
+    "semantic_hash": "ddb7c3031752160637e8a786ba01a3d7"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\src\\main.rs": {
+    "mtime": 1780526900.4170356,
+    "ast_hash": "7e12b14dbd5428203e696fffa6690922",
+    "semantic_hash": "7e12b14dbd5428203e696fffa6690922"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\floating.js": {
+    "mtime": 1780784353.4049447,
+    "ast_hash": "837a97e62b9c0584fd1ef78f93ed3dd9",
+    "semantic_hash": "837a97e62b9c0584fd1ef78f93ed3dd9"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\fonts.js": {
+    "mtime": 1780750935.3882024,
+    "ast_hash": "11c64b36de374d73026c56214dab2370",
+    "semantic_hash": "11c64b36de374d73026c56214dab2370"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\i18n.js": {
+    "mtime": 1780782256.542536,
+    "ast_hash": "6deaadc768e3043d7f98bae753983225",
+    "semantic_hash": "6deaadc768e3043d7f98bae753983225"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\main.js": {
+    "mtime": 1780784346.9132285,
+    "ast_hash": "fcbc2a30cbe3872bdd99733ba17a9b53",
+    "semantic_hash": "fcbc2a30cbe3872bdd99733ba17a9b53"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\media.js": {
+    "mtime": 1780784328.4387693,
+    "ast_hash": "e6077429e34d9e1b572516b8f667b8c3",
+    "semantic_hash": "e6077429e34d9e1b572516b8f667b8c3"
+  },
+  "C:\\Claude\\Prompt Saver\\CHANGELOG.md": {
+    "mtime": 1780741458.9811625,
+    "ast_hash": "824530d25367a3c4e4b8b9d88c7bdc52",
+    "semantic_hash": "824530d25367a3c4e4b8b9d88c7bdc52"
+  },
+  "C:\\Claude\\Prompt Saver\\GEMINI.md": {
+    "mtime": 1780777565.2900915,
+    "ast_hash": "82efb97a359f5c7290bf2513d14686be",
+    "semantic_hash": "82efb97a359f5c7290bf2513d14686be"
+  },
+  "C:\\Claude\\Prompt Saver\\README.md": {
+    "mtime": 1780741468.432599,
+    "ast_hash": "a79df63aeb90fe6c26d40ad3b58b44fa",
+    "semantic_hash": "a79df63aeb90fe6c26d40ad3b58b44fa"
+  },
+  "C:\\Claude\\Prompt Saver\\docs\\release-notes.md": {
+    "mtime": 1780741472.661906,
+    "ast_hash": "88fcc74cefea983a898eb59dba5e066e",
+    "semantic_hash": "88fcc74cefea983a898eb59dba5e066e"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\floating.html": {
+    "mtime": 1780782230.477807,
+    "ast_hash": "6bc92c171d184d61a3dc60fa27ba244b",
+    "semantic_hash": "6bc92c171d184d61a3dc60fa27ba244b"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\index.html": {
+    "mtime": 1780781711.4345233,
+    "ast_hash": "62b55ca013f76c4fcd9c4251265ddd6d",
+    "semantic_hash": "62b55ca013f76c4fcd9c4251265ddd6d"
+  },
+  "C:\\Claude\\Prompt Saver\\docs\\screenshot.svg": {
+    "mtime": 1780577925.8088412,
+    "ast_hash": "597e407954584a827529318bb86919a1",
+    "semantic_hash": "597e407954584a827529318bb86919a1"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\icons\\128x128.png": {
+    "mtime": 1780766666.8439786,
+    "ast_hash": "f1d383c049ea3fc60516b12fef2da2da",
+    "semantic_hash": "f1d383c049ea3fc60516b12fef2da2da"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\icons\\128x128@2x.png": {
+    "mtime": 1780766666.8554783,
+    "ast_hash": "85c29c10da2ebe65ef96407e4241b37f",
+    "semantic_hash": "85c29c10da2ebe65ef96407e4241b37f"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\icons\\32x32.png": {
+    "mtime": 1780766666.8374794,
+    "ast_hash": "434be820f7627546db23ee34a656f7fc",
+    "semantic_hash": "434be820f7627546db23ee34a656f7fc"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\icons\\64x64.png": {
+    "mtime": 1780766666.8394792,
+    "ast_hash": "bb09bf1b03a5671046c92958a3d359d0",
+    "semantic_hash": "bb09bf1b03a5671046c92958a3d359d0"
+  },
+  "C:\\Claude\\Prompt Saver\\src-tauri\\icons\\icon.png": {
+    "mtime": 1780766666.8869953,
+    "ast_hash": "5181a77f2aa0b5d60160ef7c29a01971",
+    "semantic_hash": "5181a77f2aa0b5d60160ef7c29a01971"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\assets\\icon.svg": {
+    "mtime": 1780568682.14574,
+    "ast_hash": "0ad455af85e6a4de329d4e018bbd9279",
+    "semantic_hash": "0ad455af85e6a4de329d4e018bbd9279"
+  },
+  "C:\\Claude\\Prompt Saver\\ui\\assets\\logo.svg": {
+    "mtime": 1780568698.761137,
+    "ast_hash": "0b3d10ad07e36f7a35ad6245c4661314",
+    "semantic_hash": "0b3d10ad07e36f7a35ad6245c4661314"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-09-28-442Z.yml": {
+    "mtime": 1780780168.4446187,
+    "ast_hash": "61f57aaebb8a0a7029d67c4609b4e433",
+    "semantic_hash": "61f57aaebb8a0a7029d67c4609b4e433"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-24-31-721Z.yml": {
+    "mtime": 1780781071.7222497,
+    "ast_hash": "61f57aaebb8a0a7029d67c4609b4e433",
+    "semantic_hash": "61f57aaebb8a0a7029d67c4609b4e433"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-25-13-320Z.yml": {
+    "mtime": 1780781113.3216708,
+    "ast_hash": "a0e21588daa220456086fc2b58cf3a3c",
+    "semantic_hash": "a0e21588daa220456086fc2b58cf3a3c"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-27-05-860Z.yml": {
+    "mtime": 1780781225.861387,
+    "ast_hash": "2ebbf1a0699d76c9024f0580aff31588",
+    "semantic_hash": "2ebbf1a0699d76c9024f0580aff31588"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-27-41-189Z.yml": {
+    "mtime": 1780781261.1904368,
+    "ast_hash": "61f57aaebb8a0a7029d67c4609b4e433",
+    "semantic_hash": "61f57aaebb8a0a7029d67c4609b4e433"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-36-59-795Z.yml": {
+    "mtime": 1780781819.7967904,
+    "ast_hash": "2ebbf1a0699d76c9024f0580aff31588",
+    "semantic_hash": "2ebbf1a0699d76c9024f0580aff31588"
+  },
+  "C:\\Claude\\Prompt Saver\\FUTUREUPDATES.md": {
+    "mtime": 1780783496.4641154,
+    "ast_hash": "dc09bed629b2472885c9e4a7169d034b",
+    "semantic_hash": "dc09bed629b2472885c9e4a7169d034b"
+  },
+  "C:\\Claude\\Prompt Saver\\.playwright-mcp\\page-2026-06-06T21-54-53-082Z.yml": {
+    "mtime": 1780782893.0833025,
+    "ast_hash": "084680e05597d92db22c8c738f724cef",
+    "semantic_hash": "084680e05597d92db22c8c738f724cef"
+  }
+}

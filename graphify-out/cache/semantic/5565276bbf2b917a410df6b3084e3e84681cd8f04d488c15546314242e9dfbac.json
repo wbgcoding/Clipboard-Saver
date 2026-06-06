@@ -1,0 +1,1 @@
+{"nodes": [{"id": "src_tauri_src_main", "label": "main.rs", "file_type": "code", "source_file": "src-tauri/src/main.rs", "source_location": null}], "edges": [{"source": "src_tauri_src_main", "target": "src_tauri_src_lib", "relation": "calls", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "src-tauri/src/main.rs"}], "hyperedges": []}

@@ -1,0 +1,12 @@
+{
+  "last_session_id": "ebd01e85-685e-490b-8318-1125b0309439",
+  "last_event_key": "ebd01e85-685e-490b-8318-1125b0309439:transcript:fcd0ebe050c9b341419b3f14390f2722d1df4e72df3546c8a6f1b82e0fe973f4",
+  "last_prompted_session_id": "",
+  "last_reason": "short-session",
+  "last_prompted_at": "",
+  "last_user_message_count": 0,
+  "last_actionable_message_count": 0,
+  "deep_interview_lock_active": false,
+  "deep_interview_lock_source": "/claude/Prompt Saver/.omg/state/deep-interview.json",
+  "updated_at": "2026-06-06T20:34:03.065Z"
+}

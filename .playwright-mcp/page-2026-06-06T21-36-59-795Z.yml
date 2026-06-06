@@ -1,0 +1,3 @@
+- button "Cap Copied!" [ref=e2]:
+  - generic: Cap
+  - generic [ref=e3]: Copied!

@@ -1,0 +1,29 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e4]: Prompt Saver
+    - generic [ref=e5]:
+      - generic "Grid size" [ref=e6]:
+        - spinbutton "Grid size" [ref=e7]: "5"
+        - generic [ref=e8]: ×
+        - spinbutton "Grid size" [ref=e9]: "4"
+      - button "All prompts" [ref=e10] [cursor=pointer]
+      - button "Settings" [ref=e11] [cursor=pointer]
+      - button "Hide bar" [ref=e12] [cursor=pointer]
+  - generic [ref=e14]:
+    - 'generic "Erster Prompt mit etwas längerem Namen x Click: copy | Drag: move | Right-click: menu" [ref=e16] [cursor=pointer]':
+      - generic [ref=e17]: Erster Prompt mit etwas längerem Namen
+      - button "Actions" [ref=e18]:
+        - img [ref=e19]
+    - 'generic "Kurz y Click: copy | Drag: move | Right-click: menu" [ref=e22] [cursor=pointer]':
+      - generic [ref=e23]: Kurz
+      - button "Actions" [ref=e24]:
+        - img [ref=e25]
+    - 'generic "Mittellanger Name hier z Click: copy | Drag: move | Right-click: menu" [ref=e33] [cursor=pointer]':
+      - generic [ref=e34]: Mittellanger Name hier
+      - button "Actions" [ref=e35]:
+        - img [ref=e36]
+  - contentinfo [ref=e50]:
+    - button [ref=e51] [cursor=pointer]
+    - textbox "Type a prompt…" [active] [ref=e52]
+    - button "Save" [disabled] [ref=e53]
+    - button "Hide bar" [ref=e54] [cursor=pointer]

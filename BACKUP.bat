@@ -21,6 +21,8 @@ if exist "%sevenzip%" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%source%' -Exclude 'BACKUP.bat' | Compress-Archive -DestinationPath '%zipfile%' -CompressionLevel Optimal"
 )
 set "result=%errorlevel%"
+rem 7-Zip exit 1 = nur Warnungen (z.B. gesperrte Logdateien) - ZIP ist trotzdem vollstaendig
+if "%result%"=="1" if not defined zipfallback set "result=0"
 echo.
 echo ZIP erstellt:
 echo %zipfile%

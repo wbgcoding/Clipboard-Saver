@@ -179,7 +179,9 @@ const FLOAT_H: f64 = 48.0;
 const FLOAT_IMG: f64 = 180.0; // square box for image pills: S 135 / M 180 / L 252
 const FLOAT_MENU_W: f64 = 220.0;
 const FLOAT_MENU_H: f64 = 168.0;
-const AUTOSTART_KEY: &str = "PromptSaver";
+const AUTOSTART_KEY: &str = "Clipboard-Saver";
+// Value name used by older versions (and by the app this was forked from).
+const AUTOSTART_KEY_LEGACY: &str = "PromptSaver";
 
 fn grid_key(cols: u32, rows: u32) -> String {
     format!("{}x{}", cols, rows)
@@ -308,7 +310,7 @@ fn data_dir(app: &AppHandle) -> PathBuf {
     let dir = app
         .path()
         .app_data_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("prompt-saver"));
+        .unwrap_or_else(|_| std::env::temp_dir().join("clipboard-saver"));
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -403,7 +405,7 @@ fn flabel(id: &str) -> String {
 
 // Append a line to the diagnostic log in %TEMP%.
 fn log_debug(msg: &str) {
-    let path = std::env::temp_dir().join("prompt-saver-panic.log");
+    let path = std::env::temp_dir().join("clipboard-saver-panic.log");
     let _ = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -1160,14 +1162,21 @@ async fn edit_prompt_request(app: AppHandle, id: String) -> Result<(), String> {
 // Add/remove the app in the per-user Windows autostart registry key.
 #[cfg(windows)]
 fn apply_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
-    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE};
     use winreg::RegKey;
     let run = RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey_with_flags(
             r"Software\Microsoft\Windows\CurrentVersion\Run",
-            KEY_SET_VALUE,
+            KEY_QUERY_VALUE | KEY_SET_VALUE,
         )
         .map_err(|e| e.to_string())?;
+    // Migrate the legacy value name, but only when it points at this app —
+    // a Prompt Saver installation legitimately owns the same value name.
+    if let Ok(old) = run.get_value::<String, _>(AUTOSTART_KEY_LEGACY) {
+        if old.to_lowercase().contains("clipboard-saver.exe") {
+            let _ = run.delete_value(AUTOSTART_KEY_LEGACY);
+        }
+    }
     if enabled {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let flag = if minimized { " --minimized" } else { "" };
@@ -1660,12 +1669,12 @@ fn ensure_webview2() -> bool {
     let (title, msg) = if is_german() {
         (
             "WebView2 Runtime fehlt",
-            "Prompt Saver benötigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Prompt Saver einfach erneut starten.",
+            "Clipboard-Saver benötigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Clipboard-Saver einfach erneut starten.",
         )
     } else {
         (
             "WebView2 runtime missing",
-            "Prompt Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Prompt Saver again afterwards.",
+            "Clipboard-Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Clipboard-Saver again afterwards.",
         )
     };
     let answer = rfd::MessageDialog::new()
@@ -1695,7 +1704,7 @@ pub fn run() {
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("{}\n", info);
         eprintln!("{}", msg);
-        let path = std::env::temp_dir().join("prompt-saver-panic.log");
+        let path = std::env::temp_dir().join("clipboard-saver-panic.log");
         let _ = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -1839,7 +1848,7 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
             let mut tray = TrayIconBuilder::new()
-                .tooltip("Prompt Saver")
+                .tooltip("Clipboard-Saver")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {

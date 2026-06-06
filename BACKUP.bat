@@ -1,7 +1,7 @@
 @echo off
 setlocal
-color 0a
-mode con lines=20 cols=83
+color 0a 2>nul
+mode con lines=20 cols=83 >nul 2>nul
 :: Hier Projektnamen eintragen
 set "project=Clipboard-Saver" 
 
@@ -20,14 +20,16 @@ if exist "%sevenzip%" (
     set "zipfallback=1"
     powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%source%' -Exclude 'BACKUP.bat' | Compress-Archive -DestinationPath '%zipfile%' -CompressionLevel Optimal"
 )
+set "result=%errorlevel%"
 echo.
 echo ZIP erstellt:
 echo %zipfile%
 echo.
 if defined zipfallback (
     echo HINWEIS: 7-Zip nicht gefunden - normales ZIP wurde verwendet.
-    pause
+    pause 2>nul
 ) else (
-    timeout 5
+    rem timeout braucht eine interaktive Konsole - Fehler dort ist egal
+    timeout 5 2>nul
 )
-exit
+exit /b %result%

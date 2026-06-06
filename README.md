@@ -19,8 +19,8 @@ A tiny, fully offline Windows tool for storing your frequently used text snippet
 - **Runs in the background** – optional minimize-to-tray on close, autostart at login (optionally minimized)
 - **Auto updates** – daily check for new releases with one-click install (also manually via Settings → Updates)
 - **Light / dark / system theme** with live OS detection
-- **100% local** – data stored as JSON in `%APPDATA%`, no network, no telemetry
-- **Tiny** – ~3 MB exe (Tauri / Rust), uses the Windows WebView2 runtime
+- **100% local** – data stored as JSON in `%APPDATA%`, no telemetry; the only network access is the (optional) update check
+- **Small** – ~7 MB exe (Tauri / Rust), uses the Windows WebView2 runtime
 
 ## Download
 
@@ -41,6 +41,7 @@ Both need the Microsoft WebView2 runtime (preinstalled on Windows 11 and current
 |---|---|
 | Save a snippet | Type it in the input line → **Save** → name + color (Ctrl+Enter works too) |
 | Copy a snippet | Click its tile ("Copied!" bubble) |
+| Save an image | Image button next to the input: from the clipboard or a file; click the tile to copy it |
 | Move a tile | Drag it to any grid cell; drop on an occupied cell to swap |
 | Edit / hide / pin / delete | Right-click a tile (or hover **⋮**); deleting asks twice |
 | All texts | List icon in the header: view, edit and place every snippet |

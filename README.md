@@ -2,7 +2,7 @@
 
 A tiny, fully offline Windows tool for storing your frequently used text snippets and copying them to the clipboard with a single click — from a customizable grid or from floating always-on-top buttons that work over any application.
 
-![Clipboard-Saver](docs/screenshot.svg)
+![Clipboard-Saver](docs/screenshot.png)
 
 ## Features
 

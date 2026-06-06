@@ -1,6 +1,7 @@
-// Prompt Saver backend (Tauri v2). Local JSON storage, clipboard, import/export,
+// Clipboard-Saver backend (Tauri v2). Local JSON storage, clipboard, import/export,
 // multiple views, frameless floating quick-copy windows. No network, 100% offline.
 
+use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -14,7 +15,7 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 
-// Bring the main window back from the tray â€” always at the saved size/position.
+// Bring the main window back from the tray — always at the saved size/position.
 fn show_main(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         if let Some(state) = app.try_state::<Db>() {
@@ -44,6 +45,16 @@ struct Prompt {
     // Optional tile color (hex); empty = default surface color.
     #[serde(default)]
     color: String,
+    // Optional PNG data URL (scaled to ≤1024px); empty = no image.
+    #[serde(default)]
+    image: String,
+    // When true the tile shows the image instead of the name text.
+    #[serde(default)]
+    show_image: bool,
+    // True = clicking copies the image itself; false = the image is only an
+    // icon and clicking copies the text.
+    #[serde(default)]
+    copy_image: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -93,6 +104,8 @@ struct Settings {
     autostart: bool,
     #[serde(default)]
     start_minimized: bool,
+    #[serde(default = "default_on")]
+    auto_update: bool,
     #[serde(default = "default_language")]
     language: String,
     #[serde(default = "default_tile_font")]
@@ -121,6 +134,9 @@ fn default_cols() -> u32 {
 fn default_rows() -> u32 {
     4
 }
+fn default_on() -> bool {
+    true
+}
 fn default_language() -> String {
     "auto".to_string()
 }
@@ -142,6 +158,7 @@ impl Default for Settings {
             minimize_to_tray: false,
             autostart: false,
             start_minimized: false,
+            auto_update: true,
             language: default_language(),
             tile_font: default_tile_font(),
             tile_size: default_tile_size(),
@@ -159,6 +176,7 @@ const GRID_MAX: u32 = 20;
 const MAX_VIEWS: usize = 20;
 const FLOAT_W: f64 = 160.0;
 const FLOAT_H: f64 = 48.0;
+const FLOAT_IMG: f64 = 180.0; // square box for image pills: S 135 / M 180 / L 252
 const FLOAT_MENU_W: f64 = 220.0;
 const FLOAT_MENU_H: f64 = 168.0;
 const AUTOSTART_KEY: &str = "PromptSaver";
@@ -203,15 +221,15 @@ fn resolve_lang(pref: &str) -> &'static str {
 // Tray menu labels per language.
 fn tray_labels(lang: &str) -> (&'static str, &'static str) {
     match lang {
-        "de" => ("Ã–ffnen", "Beenden"),
+        "de" => ("Öffnen", "Beenden"),
         "es" => ("Abrir", "Salir"),
         "fr" => ("Ouvrir", "Quitter"),
         "it" => ("Apri", "Esci"),
         "pt" => ("Abrir", "Sair"),
-        "pl" => ("OtwÃ³rz", "ZakoÅ„cz"),
-        "ru" => ("ÐžÑ‚ÐºÑ€Ñ‹Ñ‚ÑŒ", "Ð’Ñ‹Ñ…Ð¾Ð´"),
-        "zh" => ("æ‰“å¼€", "é€€å‡º"),
-        "ja" => ("é–‹ã", "çµ‚äº†"),
+        "pl" => ("Otwórz", "Zakończ"),
+        "ru" => ("Открыть", "Выход"),
+        "zh" => ("打开", "退出"),
+        "ja" => ("開く", "終了"),
         _ => ("Open", "Quit"),
     }
 }
@@ -223,19 +241,19 @@ fn home_name(lang: &str) -> &'static str {
         "de" => "Startseite",
         "es" => "Inicio",
         "fr" => "Accueil",
-        "pt" => "InÃ­cio",
-        "pl" => "Strona gÅ‚Ã³wna",
-        "ru" => "Ð“Ð»Ð°Ð²Ð½Ð°Ñ",
-        "zh" => "ä¸»é¡µ",
-        "ja" => "ãƒ›ãƒ¼ãƒ ",
+        "pt" => "Início",
+        "pl" => "Strona główna",
+        "ru" => "Главная",
+        "zh" => "主页",
+        "ja" => "ホーム",
         _ => "Home", // en + it
     }
 }
 
 // Every possible default name -> a view still carrying one was never renamed.
 const HOME_NAMES: [&str; 9] = [
-    "Home", "Startseite", "Inicio", "Accueil", "InÃ­cio",
-    "Strona gÅ‚Ã³wna", "Ð“Ð»Ð°Ð²Ð½Ð°Ñ", "ä¸»é¡µ", "ãƒ›ãƒ¼ãƒ ",
+    "Home", "Startseite", "Inicio", "Accueil", "Início",
+    "Strona główna", "Главная", "主页", "ホーム",
 ];
 
 impl Settings {
@@ -324,10 +342,15 @@ fn load_store(app: &AppHandle) -> Store {
     let dir = data_dir(app);
     let mut settings: Settings = read_json(&dir.join("settings.json"));
     settings.migrate();
-    Store {
-        prompts: read_json(&dir.join("prompts.json")),
-        settings,
+    let mut prompts: Vec<Prompt> = read_json(&dir.join("prompts.json"));
+    // Migration: image prompts saved before copy_image existed copied the
+    // image on click — keep that behaviour (name doubled as the text).
+    for p in &mut prompts {
+        if !p.image.is_empty() && !p.copy_image && (p.text.is_empty() || p.text == p.name) {
+            p.copy_image = true;
+        }
     }
+    Store { prompts, settings }
 }
 
 fn gen_id() -> String {
@@ -343,6 +366,19 @@ fn lock<'a>(state: &'a State<'a, Db>) -> std::sync::MutexGuard<'a, Store> {
 }
 
 // ---------- Theme ----------
+
+// Native window background = theme background, so the area exposed while
+// resizing never flashes white.
+fn apply_window_bg(app: &AppHandle, theme: &str) {
+    if let Some(win) = app.get_webview_window("main") {
+        let color = if theme == "dark" {
+            tauri::webview::Color(27, 27, 29, 255) // --bg dark #1b1b1d
+        } else {
+            tauri::webview::Color(247, 247, 248, 255) // --bg light #f7f7f8
+        };
+        let _ = win.set_background_color(Some(color));
+    }
+}
 
 fn effective_theme(app: &AppHandle, pref: &str) -> String {
     match pref {
@@ -395,6 +431,19 @@ fn float_scale_of(settings: &Settings, id: &str) -> f64 {
     if s.is_finite() { s.clamp(0.5, 2.0) } else { 1.0 }
 }
 
+// Pill window size: square box for image pills, classic pill for text.
+fn pill_dims(is_image: bool, scale: f64) -> (f64, f64) {
+    if is_image {
+        (FLOAT_IMG * scale, FLOAT_IMG * scale)
+    } else {
+        (FLOAT_W * scale, FLOAT_H * scale)
+    }
+}
+
+fn is_image_prompt(p: &Prompt) -> bool {
+    p.show_image && !p.image.is_empty()
+}
+
 fn open_floating(app: &AppHandle, prompt: &Prompt) {
     let label = flabel(&prompt.id);
     if app.get_webview_window(&label).is_some() {
@@ -419,9 +468,10 @@ fn open_floating(app: &AppHandle, prompt: &Prompt) {
         save_settings(app, &store.settings);
     }
 
+    let (pw, ph) = pill_dims(is_image_prompt(prompt), scale);
     let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("floating.html".into()))
         .title(&prompt.name)
-        .inner_size(FLOAT_W * scale, FLOAT_H * scale)
+        .inner_size(pw, ph)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
@@ -465,6 +515,91 @@ fn close_floating_window(app: &AppHandle, id: &str) {
     }
 }
 
+// ---------- Image helpers ----------
+
+fn base64_encode(data: &[u8]) -> String {
+    const B: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for c in data.chunks(3) {
+        let n = ((c[0] as u32) << 16)
+            | ((*c.get(1).unwrap_or(&0) as u32) << 8)
+            | (*c.get(2).unwrap_or(&0) as u32);
+        out.push(B[((n >> 18) & 63) as usize] as char);
+        out.push(B[((n >> 12) & 63) as usize] as char);
+        out.push(if c.len() > 1 { B[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if c.len() > 2 { B[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+fn base64_decode(s: &str) -> Vec<u8> {
+    const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes: Vec<u8> = s.bytes().filter(|&b| b != b'=').collect();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    for c in bytes.chunks(4) {
+        let v: Vec<u32> = c.iter()
+            .filter_map(|&b| B64.iter().position(|&x| x == b).map(|i| i as u32))
+            .collect();
+        if v.len() >= 2 { out.push(((v[0] << 2) | (v[1] >> 4)) as u8); }
+        if v.len() >= 3 { out.push(((v[1] << 4) | (v[2] >> 2)) as u8); }
+        if v.len() >= 4 { out.push(((v[2] << 6) |  v[3]      ) as u8); }
+    }
+    out
+}
+
+fn copy_image_to_clipboard(data_url: &str) -> bool {
+    let b64 = data_url.trim_start_matches("data:image/png;base64,");
+    let bytes = base64_decode(b64);
+    if bytes.is_empty() { return false; }
+    let img = match image::load_from_memory(&bytes) {
+        Ok(img) => img.to_rgba8(),
+        Err(_) => return false,
+    };
+    let (w, h) = img.dimensions();
+    let img_data = arboard::ImageData {
+        width: w as usize,
+        height: h as usize,
+        bytes: img.into_raw().into(),
+    };
+    arboard::Clipboard::new().and_then(|mut c| c.set_image(img_data)).is_ok()
+}
+
+fn scale_and_encode(img: image::DynamicImage) -> String {
+    // High quality: generous max size + Lanczos filtering keeps tiles sharp.
+    const MAX: u32 = 1024;
+    let img = if img.width() > MAX || img.height() > MAX {
+        img.resize(MAX, MAX, FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let mut buf = std::io::Cursor::new(Vec::<u8>::new());
+    if img.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+        format!("data:image/png;base64,{}", base64_encode(buf.get_ref()))
+    } else {
+        String::new()
+    }
+}
+
+#[tauri::command]
+fn get_clipboard_image() -> Option<String> {
+    let mut cb = arboard::Clipboard::new().ok()?;
+    let data = cb.get_image().ok()?;
+    let bytes: Vec<u8> = data.bytes.into_owned();
+    let img = image::RgbaImage::from_raw(data.width as u32, data.height as u32, bytes)?;
+    let result = scale_and_encode(image::DynamicImage::ImageRgba8(img));
+    if result.is_empty() { None } else { Some(result) }
+}
+
+#[tauri::command]
+fn pick_image_file() -> Option<String> {
+    let path = rfd::FileDialog::new()
+        .add_filter("Image", &["png", "jpg", "jpeg", "webp", "bmp"])
+        .pick_file()?;
+    let img = image::open(&path).ok()?;
+    let result = scale_and_encode(img);
+    if result.is_empty() { None } else { Some(result) }
+}
+
 // ---------- Prompt commands ----------
 
 #[tauri::command]
@@ -495,12 +630,18 @@ fn add_prompt(
     name: String,
     text: String,
     color: String,
+    image: Option<String>,
+    show_image: Option<bool>,
+    copy_image: Option<bool>,
 ) -> Prompt {
     let prompt = Prompt {
         id: gen_id(),
         name,
         text,
         color,
+        image: image.unwrap_or_default(),
+        show_image: show_image.unwrap_or(false),
+        copy_image: copy_image.unwrap_or(false),
     };
     {
         let mut store = lock(&state);
@@ -524,6 +665,9 @@ fn update_prompt(
     name: String,
     text: String,
     color: String,
+    image: Option<String>,
+    show_image: Option<bool>,
+    copy_image: Option<bool>,
 ) -> Option<Prompt> {
     let updated = {
         let mut store = lock(&state);
@@ -533,6 +677,9 @@ fn update_prompt(
                 p.name = name;
                 p.text = text;
                 p.color = color;
+                if let Some(img) = image { p.image = img; }
+                if let Some(si) = show_image { p.show_image = si; }
+                if let Some(ci) = copy_image { p.copy_image = ci; }
                 let clone = p.clone();
                 save_prompts(&app, &store);
                 Some(clone)
@@ -542,6 +689,12 @@ fn update_prompt(
     };
     if let Some(p) = &updated {
         let _ = app.emit("prompt-updated", p.clone());
+        // An open pill switches between text pill and image box live.
+        if let Some(win) = app.get_webview_window(&flabel(&p.id)) {
+            let scale = float_scale_of(&lock(&state).settings, &p.id);
+            let (w, h) = pill_dims(is_image_prompt(p), scale);
+            let _ = win.set_size(tauri::LogicalSize::new(w, h));
+        }
     }
     updated
 }
@@ -756,19 +909,21 @@ fn set_theme(app: AppHandle, state: State<Db>, theme: String) -> String {
         save_settings(&app, &store.settings);
     }
     let effective = effective_theme(&app, &theme);
+    apply_window_bg(&app, &effective);
     let _ = app.emit("theme-changed", effective.clone());
     effective
 }
 
 #[tauri::command]
 fn copy_prompt(state: State<Db>, id: String) -> bool {
-    let text = {
+    let prompt = {
         let store = lock(&state);
-        store.prompts.iter().find(|p| p.id == id).map(|p| p.text.clone())
+        store.prompts.iter().find(|p| p.id == id).cloned()
     };
-    match text {
-        Some(t) => arboard::Clipboard::new()
-            .and_then(|mut c| c.set_text(t))
+    match prompt {
+        Some(p) if p.copy_image && !p.image.is_empty() => copy_image_to_clipboard(&p.image),
+        Some(p) => arboard::Clipboard::new()
+            .and_then(|mut c| c.set_text(p.text))
             .is_ok(),
         None => false,
     }
@@ -811,13 +966,15 @@ async fn set_float_scale(
     scale: f64,
 ) -> Result<(), String> {
     let scale = if scale.is_finite() { scale.clamp(0.5, 2.0) } else { 1.0 };
-    {
+    let is_img = {
         let mut store = lock(&state);
         store.settings.float_scale.insert(id.clone(), scale);
         save_settings(&app, &store.settings);
-    }
+        store.prompts.iter().find(|p| p.id == id).map(is_image_prompt).unwrap_or(false)
+    };
     if let Some(win) = app.get_webview_window(&flabel(&id)) {
-        let _ = win.set_size(tauri::LogicalSize::new(FLOAT_W * scale, FLOAT_H * scale));
+        let (w, h) = pill_dims(is_img, scale);
+        let _ = win.set_size(tauri::LogicalSize::new(w, h));
     }
     Ok(())
 }
@@ -830,16 +987,164 @@ async fn resize_float_menu(
     id: String,
     open: bool,
 ) -> Result<(), String> {
-    let scale = float_scale_of(&lock(&state).settings, &id);
+    let (scale, is_img) = {
+        let store = lock(&state);
+        (
+            float_scale_of(&store.settings, &id),
+            store.prompts.iter().find(|p| p.id == id).map(is_image_prompt).unwrap_or(false),
+        )
+    };
     if let Some(win) = app.get_webview_window(&flabel(&id)) {
-        let (w, h) = if open {
-            ((FLOAT_W * scale).max(FLOAT_MENU_W), FLOAT_MENU_H)
-        } else {
-            (FLOAT_W * scale, FLOAT_H * scale)
-        };
+        let (pw, ph) = pill_dims(is_img, scale);
+        let (w, h) = if open { (pw.max(FLOAT_MENU_W), FLOAT_MENU_H) } else { (pw, ph) };
         let _ = win.set_size(tauri::LogicalSize::new(w, h));
     }
     Ok(())
+}
+
+// ---------- Updates (GitHub releases) ----------
+
+const UPDATE_API: &str = "https://api.github.com/repos/wbgcoding/Clipboard-Saver/releases/latest";
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const UPDATE_MAX_BYTES: u64 = 100 * 1024 * 1024;
+
+#[derive(Serialize, Clone)]
+struct UpdateInfo {
+    available: bool,
+    version: String,
+    url: String,
+}
+
+// Latest release tag + installer asset URL, None on any failure (offline,
+// private repo, rate limit) — update checks must never disturb the app.
+fn fetch_latest() -> Option<(String, String)> {
+    let body = ureq::get(UPDATE_API)
+        .set("User-Agent", "ClipboardSaver")
+        .timeout(std::time::Duration::from_secs(10))
+        .call()
+        .ok()?
+        .into_string()
+        .ok()?;
+    let json: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let tag = json["tag_name"].as_str()?.trim_start_matches('v').to_string();
+    let url = json["assets"].as_array()?.iter().find_map(|a| {
+        let name = a["name"].as_str()?;
+        if name.ends_with("-setup.exe") {
+            a["browser_download_url"].as_str().map(String::from)
+        } else {
+            None
+        }
+    })?;
+    Some((tag, url))
+}
+
+fn version_newer(latest: &str, current: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.split('.').map(|p| p.parse().unwrap_or(0)).collect()
+    };
+    parse(latest) > parse(current)
+}
+
+fn updater_check() -> Option<UpdateInfo> {
+    let (version, url) = fetch_latest()?;
+    version_newer(&version, APP_VERSION).then(|| UpdateInfo {
+        available: true,
+        version,
+        url,
+    })
+}
+
+#[tauri::command]
+fn set_auto_update(app: AppHandle, state: State<Db>, enabled: bool) {
+    let mut store = lock(&state);
+    store.settings.auto_update = enabled;
+    save_settings(&app, &store.settings);
+}
+
+#[tauri::command]
+fn app_version() -> String {
+    APP_VERSION.to_string()
+}
+
+#[tauri::command]
+async fn check_update() -> Result<UpdateInfo, String> {
+    match fetch_latest() {
+        Some((version, url)) => {
+            let available = version_newer(&version, APP_VERSION);
+            Ok(UpdateInfo {
+                available,
+                version: if available { version } else { APP_VERSION.to_string() },
+                url: if available { url } else { String::new() },
+            })
+        }
+        None => Err("update check failed".to_string()),
+    }
+}
+
+// Download the installer to %TEMP%, run it fully silent (/S), restart the
+// app afterwards and quit so the installer can replace the binaries.
+#[tauri::command]
+async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/") {
+        return Err("invalid update source".to_string());
+    }
+    let resp = ureq::get(&url)
+        .set("User-Agent", "ClipboardSaver")
+        .timeout(std::time::Duration::from_secs(300))
+        .call()
+        .map_err(|e| format!("download: {}", e))?;
+    let mut bytes = Vec::new();
+    use std::io::Read;
+    resp.into_reader()
+        .take(UPDATE_MAX_BYTES)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read: {}", e))?;
+    let installer = std::env::temp_dir().join("clipboard-saver-setup.exe");
+    fs::write(&installer, &bytes).map_err(|e| format!("save installer: {}", e))?;
+
+    // Helper script: silent install, relaunch the app, clean up after itself.
+    let app_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let script = std::env::temp_dir().join("clipboard-saver-update.cmd");
+    let content = format!(
+        "@echo off\r\n\"{}\" /S\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+        installer.display(),
+        app_exe.display()
+    );
+    fs::write(&script, content).map_err(|e| format!("save script: {}", e))?;
+
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", &script.to_string_lossy()]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // no console window
+    }
+    cmd.spawn().map_err(|e| format!("start installer: {}", e))?;
+
+    // Exit slightly delayed so this command's reply still reaches the UI.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        if let Some(state) = app.try_state::<Db>() {
+            let store = state.lock().unwrap_or_else(|e| e.into_inner());
+            save_settings(&app, &store.settings);
+        }
+        app.exit(0);
+    });
+    Ok(())
+}
+
+// Called by the frontend once the first render + text fit is complete.
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    if std::env::args().any(|a| a == "--minimized") {
+        return;
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        if !w.is_visible().unwrap_or(false) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
 }
 
 // "Edit prompt" from a pill: bring up the main window and open its edit modal.
@@ -1267,6 +1572,9 @@ fn import_prompts(app: AppHandle, state: State<Db>) -> Result<usize, String> {
             name: item.name,
             text: item.text,
             color: item.color,
+            image: String::new(),
+            show_image: false,
+            copy_image: false,
         };
         apply_positions(&mut store.settings, &prompt.id, &item.positions);
         store.prompts.push(prompt);
@@ -1352,12 +1660,12 @@ fn ensure_webview2() -> bool {
     let (title, msg) = if is_german() {
         (
             "WebView2 Runtime fehlt",
-            "Clipboard-Saver benÃ¶tigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Prompt Saver einfach erneut starten.",
+            "Prompt Saver benötigt die Microsoft WebView2 Runtime.\n\nJetzt herunterladen und installieren? Danach Prompt Saver einfach erneut starten.",
         )
     } else {
         (
             "WebView2 runtime missing",
-            "Clipboard-Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Prompt Saver again afterwards.",
+            "Prompt Saver needs the Microsoft WebView2 runtime.\n\nDownload and install it now? Simply start Prompt Saver again afterwards.",
         )
     };
     let answer = rfd::MessageDialog::new()
@@ -1424,8 +1732,27 @@ pub fn run() {
                 let geom = resolve_geometry(&main, saved_geom);
                 let _ = main.set_size(PhysicalSize::new(geom.width, geom.height));
                 let _ = main.set_position(PhysicalPosition::new(geom.x, geom.y));
+                {
+                    let pref = handle
+                        .try_state::<Db>()
+                        .map(|s| s.lock().unwrap_or_else(|e| e.into_inner()).settings.theme.clone())
+                        .unwrap_or_else(|| "system".to_string());
+                    let eff = effective_theme(&handle, &pref);
+                    apply_window_bg(&handle, &eff);
+                }
+                // The window is revealed by the frontend (show_main_window) once
+                // the first layout pass is done — no visible text re-sizing.
+                // Safety net: show after 1.5s even if the frontend never calls.
                 if !start_hidden {
-                    let _ = main.show();
+                    let h = handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1500));
+                        if let Some(w) = h.get_webview_window("main") {
+                            if !w.is_visible().unwrap_or(true) {
+                                let _ = w.show();
+                            }
+                        }
+                    });
                 }
                 if let Some(state) = handle.try_state::<Db>() {
                     state.lock().unwrap_or_else(|e| e.into_inner()).settings.window = Some(geom);
@@ -1459,6 +1786,7 @@ pub fn run() {
                                 .clone();
                             if pref == "system" {
                                 let eff = effective_theme(&handle2, &pref);
+                                apply_window_bg(&handle2, &eff);
                                 let _ = handle2.emit("theme-changed", eff);
                             }
                         }
@@ -1548,6 +1876,24 @@ pub fn run() {
             for prompt in &to_restore {
                 open_floating(&handle, prompt);
             }
+
+            // Update check: right after launch, then once a day (if enabled).
+            let h2 = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                loop {
+                    let enabled = h2
+                        .try_state::<Db>()
+                        .map(|s| s.lock().unwrap_or_else(|e| e.into_inner()).settings.auto_update)
+                        .unwrap_or(true);
+                    if enabled {
+                        if let Some(info) = updater_check() {
+                            let _ = h2.emit("update-available", info);
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(24 * 60 * 60));
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1573,11 +1919,18 @@ pub fn run() {
             set_float_scale,
             resize_float_menu,
             edit_prompt_request,
+            show_main_window,
+            app_version,
+            check_update,
+            install_update,
+            set_auto_update,
             set_minimize_on_close,
             set_autostart,
             set_start_minimized,
             export_prompts,
-            import_prompts
+            import_prompts,
+            get_clipboard_image,
+            pick_image_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

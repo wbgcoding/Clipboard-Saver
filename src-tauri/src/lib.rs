@@ -379,10 +379,23 @@ fn lock<'a>(state: &'a State<'a, Db>) -> std::sync::MutexGuard<'a, Store> {
 // resizing never flashes white.
 fn apply_window_bg(app: &AppHandle, theme: &str) {
     if let Some(win) = app.get_webview_window("main") {
-        let color = if theme == "dark" {
-            tauri::webview::Color(27, 27, 29, 255) // --bg dark #1b1b1d
-        } else {
-            tauri::webview::Color(247, 247, 248, 255) // --bg light #f7f7f8
+        // Matches the --bg token of each theme in brand.css.
+        let color = match theme {
+            "dark" => tauri::webview::Color(28, 25, 23, 255),
+            "sunset" => tauri::webview::Color(255, 247, 237, 255),
+            "ocean" => tauri::webview::Color(238, 249, 254, 255),
+            "forest" => tauri::webview::Color(240, 253, 244, 255),
+            "midnight" => tauri::webview::Color(15, 23, 42, 255),
+            "programmer" => tauri::webview::Color(13, 17, 23, 255),
+            "ai" => tauri::webview::Color(12, 8, 23, 255),
+            "gradient" => tauri::webview::Color(109, 40, 217, 255),
+            "cyberpunk" => tauri::webview::Color(10, 10, 18, 255),
+            "retro" => tauri::webview::Color(26, 18, 8, 255),
+            "mono" => tauri::webview::Color(250, 250, 250, 255),
+            "lavender" => tauri::webview::Color(245, 243, 255, 255),
+            "candy" => tauri::webview::Color(253, 242, 248, 255),
+            "coffee" => tauri::webview::Color(247, 241, 232, 255),
+            _ => tauri::webview::Color(254, 252, 232, 255),
         };
         let _ = win.set_background_color(Some(color));
     }
@@ -390,7 +403,10 @@ fn apply_window_bg(app: &AppHandle, theme: &str) {
 
 fn effective_theme(app: &AppHandle, pref: &str) -> String {
     match pref {
-        "light" | "dark" => pref.to_string(),
+        "light" | "dark" | "sunset" | "ocean" | "forest" | "midnight" | "programmer" | "ai"
+        | "gradient" | "cyberpunk" | "retro" | "mono" | "lavender" | "candy" | "coffee" => {
+            pref.to_string()
+        }
         _ => app
             .get_webview_window("main")
             .and_then(|w| w.theme().ok())

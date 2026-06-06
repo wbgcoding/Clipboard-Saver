@@ -3,6 +3,7 @@
   --pill-bg: rgba(37, 99, 235, 0.96);
   --pill-fg: #ffffff;
   --pill-ok: rgba(22, 163, 74, 0.97);
+  --danger: #dc2626;
   --menu-bg: rgba(255, 255, 255, 0.98);
   --menu-fg: #1f2430;
   --menu-line: rgba(0, 0, 0, 0.08);
@@ -13,6 +14,76 @@
   --menu-bg: rgba(32, 36, 44, 0.98);
   --menu-fg: #e8eaf0;
   --menu-line: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme="sunset"] {
+  --pill-bg: rgba(249, 115, 22, 0.96);
+}
+:root[data-theme="ocean"] {
+  --pill-bg: rgba(2, 132, 199, 0.96);
+}
+:root[data-theme="forest"] {
+  --pill-bg: rgba(22, 163, 74, 0.96);
+}
+:root[data-theme="midnight"] {
+  --pill-bg: rgba(56, 189, 248, 0.96);
+  --pill-fg: #07273a;
+  --menu-bg: rgba(30, 41, 59, 0.98);
+  --menu-fg: #e2e8f0;
+  --menu-line: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme="programmer"] {
+  --pill-bg: rgba(63, 185, 80, 0.96);
+  --pill-fg: #06150b;
+  --menu-bg: rgba(22, 27, 34, 0.98);
+  --menu-fg: #c9d1d9;
+  --menu-line: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme="ai"] {
+  --pill-bg: rgba(168, 85, 247, 0.96);
+  --menu-bg: rgba(23, 16, 40, 0.98);
+  --menu-fg: #ede9fe;
+  --menu-line: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme="gradient"] {
+  --pill-bg: linear-gradient(135deg, #4f46e5, #9333ea, #db2777, #9333ea);
+  --menu-bg: rgba(76, 29, 149, 0.96);
+  --menu-fg: #f5f3ff;
+  --menu-line: rgba(255, 255, 255, 0.14);
+}
+:root[data-theme="cyberpunk"] {
+  --pill-bg: rgba(255, 45, 120, 0.95);
+  --menu-bg: rgba(20, 20, 31, 0.98);
+  --menu-fg: #e0e7ff;
+  --menu-line: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme="retro"] {
+  --pill-bg: rgba(255, 176, 0, 0.95);
+  --pill-fg: #1a1208;
+  --menu-bg: rgba(36, 26, 13, 0.98);
+  --menu-fg: #ffb000;
+  --menu-line: rgba(255, 176, 0, 0.18);
+}
+:root[data-theme="mono"] {
+  --pill-bg: rgba(17, 17, 17, 0.95);
+}
+:root[data-theme="lavender"] {
+  --pill-bg: rgba(124, 58, 237, 0.95);
+}
+:root[data-theme="candy"] {
+  --pill-bg: rgba(236, 72, 153, 0.95);
+}
+:root[data-theme="coffee"] {
+  --pill-bg: rgba(139, 94, 52, 0.95);
+}
+/* Text pills drift through the gradient like the main window. */
+:root[data-theme="gradient"] .pill:not(.has-image) {
+  background-size: 300% 300%;
+  animation: gradient-drift 10s ease-in-out infinite;
+}
+@keyframes gradient-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 * { box-sizing: border-box; }
@@ -115,7 +186,7 @@ html, body {
   cursor: pointer;
 }
 .menu button:hover { background: var(--menu-line); }
-.menu .danger { color: #dc2626; }
+.menu .danger { color: var(--danger); }
 
 .size-row {
   display: flex;

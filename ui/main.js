@@ -19,6 +19,13 @@ const modal = {
   cancel: $("modal-cancel"),
   confirm: $("modal-confirm"),
   delete: $("modal-delete"),
+  imgWrap: $("modal-img-wrap"),
+  img: $("modal-img"),
+  showImage: $("modal-show-image"),
+  showText: $("modal-show-text"),
+  replaceImg: $("modal-replace-img"),
+  removeImg: $("modal-remove-img"),
+  addIcon: $("modal-add-icon"),
 };
 
 const DRAG_THRESHOLD = 5;
@@ -39,6 +46,7 @@ let ctxId = null;
 let drag = null;
 let toastTimer = null;
 let deleteAllTimer = null;
+let versionLabel = ""; // "v1.6.0", shown in the update status
 
 // Surface unexpected errors as a toast instead of failing silently.
 window.addEventListener("error", (e) => toast(String(e.message)));
@@ -101,6 +109,24 @@ const I18N = {
     copied: "Copied!",
     library: "All texts",
     libraryEmpty: "No texts saved yet",
+    addImage: "Add image",
+    showImageBtn: "Image",
+    showTextBtn: "Text",
+    replaceImage: "Replace",
+    imageModalTitle: "Name this image",
+    imageEditTitle: "Edit image",
+    imageNamePh: "Image name",
+    addIcon: "Image as icon",
+    removeImage: "Remove image",
+    updates: "Updates",
+    checkUpdate: "Check for updates",
+    upToDate: "You're up to date",
+    installUpdate: "Install version {v}",
+    updateFailed: "Update check failed",
+    updateAvailable: "Update {v} available",
+    installNow: "Install now",
+    autoUpdate: "Auto update",
+    autoUpdateHint: "Checks for a new version once a day",
     gridSize: "Grid size",
     deleteConfirm: "Really delete?",
   },
@@ -149,6 +175,24 @@ const I18N = {
     copied: "Kopiert!",
     library: "Alle Texte",
     libraryEmpty: "Noch keine Texte gespeichert",
+    addImage: "Bild hinzufügen",
+    showImageBtn: "Bild",
+    showTextBtn: "Text",
+    replaceImage: "Ersetzen",
+    imageModalTitle: "Bild benennen",
+    imageEditTitle: "Bild bearbeiten",
+    imageNamePh: "Bild-Name",
+    addIcon: "Bild als Icon",
+    removeImage: "Bild entfernen",
+    updates: "Updates",
+    checkUpdate: "Nach Updates suchen",
+    upToDate: "Auf dem neuesten Stand",
+    installUpdate: "Version {v} installieren",
+    updateFailed: "Updateprüfung fehlgeschlagen",
+    updateAvailable: "Update {v} verfügbar",
+    installNow: "Jetzt installieren",
+    autoUpdate: "Auto-Update",
+    autoUpdateHint: "Prüft einmal täglich auf eine neue Version",
     gridSize: "Rastergröße",
     deleteConfirm: "Wirklich löschen?",
   },
@@ -196,7 +240,25 @@ const I18N = {
     exportFailed: "Error al exportar",
     copied: "¡Copiado!",
     library: "Todos los textos",
-    libraryEmpty: "Aún no hay prompts guardados",
+    libraryEmpty: "Aún no hay textos guardados",
+    addImage: "Añadir imagen",
+    showImageBtn: "Imagen",
+    showTextBtn: "Texto",
+    replaceImage: "Reemplazar",
+    imageModalTitle: "Nombra esta imagen",
+    imageEditTitle: "Editar imagen",
+    imageNamePh: "Nombre de la imagen",
+    addIcon: "Imagen como icono",
+    removeImage: "Quitar imagen",
+    updates: "Actualizaciones",
+    checkUpdate: "Buscar actualizaciones",
+    upToDate: "Estás al día",
+    installUpdate: "Instalar versión {v}",
+    updateFailed: "Error al buscar actualizaciones",
+    updateAvailable: "Actualización {v} disponible",
+    installNow: "Instalar ahora",
+    autoUpdate: "Actualización automática",
+    autoUpdateHint: "Busca una nueva versión una vez al día",
     gridSize: "Tamaño de la cuadrícula",
     deleteConfirm: "¿Eliminar realmente?",
   },
@@ -245,6 +307,24 @@ const I18N = {
     copied: "Copié !",
     library: "Tous les textes",
     libraryEmpty: "Aucun texte enregistré",
+    addImage: "Ajouter une image",
+    showImageBtn: "Image",
+    showTextBtn: "Texte",
+    replaceImage: "Remplacer",
+    imageModalTitle: "Nommer cette image",
+    imageEditTitle: "Modifier l'image",
+    imageNamePh: "Nom de l'image",
+    addIcon: "Image comme icône",
+    removeImage: "Retirer l'image",
+    updates: "Mises à jour",
+    checkUpdate: "Rechercher des mises à jour",
+    upToDate: "Vous êtes à jour",
+    installUpdate: "Installer la version {v}",
+    updateFailed: "Échec de la recherche de mises à jour",
+    updateAvailable: "Mise à jour {v} disponible",
+    installNow: "Installer maintenant",
+    autoUpdate: "Mise à jour auto",
+    autoUpdateHint: "Recherche une nouvelle version une fois par jour",
     gridSize: "Taille de la grille",
     deleteConfirm: "Vraiment supprimer ?",
   },
@@ -293,6 +373,24 @@ const I18N = {
     copied: "Copiato!",
     library: "Tutti i testi",
     libraryEmpty: "Nessun testo salvato",
+    addImage: "Aggiungi immagine",
+    showImageBtn: "Immagine",
+    showTextBtn: "Testo",
+    replaceImage: "Sostituisci",
+    imageModalTitle: "Assegna nome all'immagine",
+    imageEditTitle: "Modifica immagine",
+    imageNamePh: "Nome dell'immagine",
+    addIcon: "Immagine come icona",
+    removeImage: "Rimuovi immagine",
+    updates: "Aggiornamenti",
+    checkUpdate: "Cerca aggiornamenti",
+    upToDate: "Sei aggiornato",
+    installUpdate: "Installa versione {v}",
+    updateFailed: "Controllo aggiornamenti non riuscito",
+    updateAvailable: "Aggiornamento {v} disponibile",
+    installNow: "Installa ora",
+    autoUpdate: "Aggiornamento autom.",
+    autoUpdateHint: "Controlla una nuova versione una volta al giorno",
     gridSize: "Dimensione griglia",
     deleteConfirm: "Eliminare davvero?",
   },
@@ -341,6 +439,24 @@ const I18N = {
     copied: "Copiado!",
     library: "Todos os textos",
     libraryEmpty: "Nenhum texto salvo ainda",
+    addImage: "Adicionar imagem",
+    showImageBtn: "Imagem",
+    showTextBtn: "Texto",
+    replaceImage: "Substituir",
+    imageModalTitle: "Nomear esta imagem",
+    imageEditTitle: "Editar imagem",
+    imageNamePh: "Nome da imagem",
+    addIcon: "Imagem como ícone",
+    removeImage: "Remover imagem",
+    updates: "Atualizações",
+    checkUpdate: "Verificar atualizações",
+    upToDate: "Você está atualizado",
+    installUpdate: "Instalar versão {v}",
+    updateFailed: "Falha ao verificar atualizações",
+    updateAvailable: "Atualização {v} disponível",
+    installNow: "Instalar agora",
+    autoUpdate: "Atualização automática",
+    autoUpdateHint: "Verifica uma nova versão uma vez por dia",
     gridSize: "Tamanho da grade",
     deleteConfirm: "Excluir mesmo?",
   },
@@ -389,6 +505,24 @@ const I18N = {
     copied: "Skopiowano!",
     library: "Wszystkie teksty",
     libraryEmpty: "Brak zapisanych tekstów",
+    addImage: "Dodaj obraz",
+    showImageBtn: "Obraz",
+    showTextBtn: "Tekst",
+    replaceImage: "Zamień",
+    imageModalTitle: "Nazwij ten obraz",
+    imageEditTitle: "Edytuj obraz",
+    imageNamePh: "Nazwa obrazu",
+    addIcon: "Obraz jako ikona",
+    removeImage: "Usuń obraz",
+    updates: "Aktualizacje",
+    checkUpdate: "Sprawdź aktualizacje",
+    upToDate: "Wszystko aktualne",
+    installUpdate: "Zainstaluj wersję {v}",
+    updateFailed: "Sprawdzanie aktualizacji nie powiodło się",
+    updateAvailable: "Dostępna aktualizacja {v}",
+    installNow: "Zainstaluj teraz",
+    autoUpdate: "Auto-aktualizacja",
+    autoUpdateHint: "Sprawdza nową wersję raz dziennie",
     gridSize: "Rozmiar siatki",
     deleteConfirm: "Na pewno usunąć?",
   },
@@ -437,6 +571,24 @@ const I18N = {
     copied: "Скопировано!",
     library: "Все тексты",
     libraryEmpty: "Текстов пока нет",
+    addImage: "Добавить изображение",
+    showImageBtn: "Изображение",
+    showTextBtn: "Текст",
+    replaceImage: "Заменить",
+    imageModalTitle: "Назовите изображение",
+    imageEditTitle: "Изменить изображение",
+    imageNamePh: "Название изображения",
+    addIcon: "Изображение как значок",
+    removeImage: "Убрать изображение",
+    updates: "Обновления",
+    checkUpdate: "Проверить обновления",
+    upToDate: "У вас последняя версия",
+    installUpdate: "Установить версию {v}",
+    updateFailed: "Не удалось проверить обновления",
+    updateAvailable: "Доступно обновление {v}",
+    installNow: "Установить сейчас",
+    autoUpdate: "Автообновление",
+    autoUpdateHint: "Проверяет новую версию раз в день",
     gridSize: "Размер сетки",
     deleteConfirm: "Точно удалить?",
   },
@@ -485,6 +637,24 @@ const I18N = {
     copied: "已复制！",
     library: "全部文本",
     libraryEmpty: "还没有保存的文本",
+    addImage: "添加图片",
+    showImageBtn: "图片",
+    showTextBtn: "文本",
+    replaceImage: "替换",
+    imageModalTitle: "为图片命名",
+    imageEditTitle: "编辑图片",
+    imageNamePh: "图片名称",
+    addIcon: "图片作为图标",
+    removeImage: "移除图片",
+    updates: "更新",
+    checkUpdate: "检查更新",
+    upToDate: "已是最新版本",
+    installUpdate: "安装版本 {v}",
+    updateFailed: "检查更新失败",
+    updateAvailable: "有可用更新 {v}",
+    installNow: "立即安装",
+    autoUpdate: "自动更新",
+    autoUpdateHint: "每天检查一次新版本",
     gridSize: "网格大小",
     deleteConfirm: "确定删除？",
   },
@@ -533,6 +703,24 @@ const I18N = {
     copied: "コピーしました！",
     library: "すべてのテキスト",
     libraryEmpty: "保存されたテキストはありません",
+    addImage: "画像を追加",
+    showImageBtn: "画像",
+    showTextBtn: "テキスト",
+    replaceImage: "置き換え",
+    imageModalTitle: "画像に名前を付ける",
+    imageEditTitle: "画像を編集",
+    imageNamePh: "画像名",
+    addIcon: "画像をアイコンに",
+    removeImage: "画像を削除",
+    updates: "更新",
+    checkUpdate: "アップデートを確認",
+    upToDate: "最新の状態です",
+    installUpdate: "バージョン {v} をインストール",
+    updateFailed: "更新の確認に失敗しました",
+    updateAvailable: "アップデート {v} があります",
+    installNow: "今すぐインストール",
+    autoUpdate: "自動更新",
+    autoUpdateHint: "1日1回新しいバージョンを確認",
     gridSize: "グリッドサイズ",
     deleteConfirm: "本当に削除？",
   },
@@ -590,6 +778,7 @@ function applyTileStyle() {
 const fitCache = new Map();
 
 function fitTileText(tile) {
+  if (tile.classList.contains("has-image")) return;
   const name = tile.querySelector(".tile-name");
   if (!name) return;
   name.classList.add("fit");
@@ -599,7 +788,10 @@ function fitTileText(tile) {
   const cached = fitCache.get(key);
   if (cached) {
     name.style.fontSize = `${cached}px`;
-    return;
+    // Trust but verify: a cached size measured under different conditions
+    // (startup, DPI change) must never overflow the tile.
+    if (name.scrollHeight <= maxH && name.scrollWidth <= maxW) return;
+    fitCache.delete(key);
   }
   // Largest size where the wrapped text fits. Width must compare against
   // maxW exactly: the block is width:100%, so scrollWidth only exceeds it
@@ -647,16 +839,30 @@ function watchDpr() {
 }
 watchDpr();
 
-function toast(msg) {
+function hideToast() {
+  toastEl.classList.remove("show");
+  setTimeout(() => toastEl.classList.add("hidden"), 200);
+}
+
+// Optional action: { label, onClick } adds a button and keeps the toast longer.
+function toast(msg, action = null) {
   toastEl.textContent = msg;
+  toastEl.classList.toggle("actionable", !!action);
+  if (action) {
+    const btn = document.createElement("button");
+    btn.className = "toast-btn";
+    btn.textContent = action.label;
+    btn.addEventListener("click", () => {
+      hideToast();
+      action.onClick();
+    });
+    toastEl.appendChild(btn);
+  }
   toastEl.classList.remove("hidden");
   void toastEl.offsetWidth;
   toastEl.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastEl.classList.remove("show");
-    setTimeout(() => toastEl.classList.add("hidden"), 200);
-  }, 1400);
+  toastTimer = setTimeout(hideToast, action ? 12000 : 1400);
 }
 
 function autoGrow(el) {
@@ -791,9 +997,23 @@ function buildTile(p) {
   tile.className = "tile";
   tile.dataset.id = p.id;
   const preview = p.text.length > PREVIEW_MAX ? `${p.text.slice(0, PREVIEW_MAX)}…` : p.text;
-  tile.title = `${p.name}\n\n${preview}\n\n${t("tileTooltip")}`;
+  tile.title = preview
+    ? `${p.name}\n\n${preview}\n\n${t("tileTooltip")}`
+    : `${p.name}\n${t("tileTooltip")}`;
 
-  if (p.color) {
+  if (p.show_image && p.image) {
+    tile.classList.add("has-image");
+    // The chosen color tints the border area around the image.
+    if (p.color) {
+      tile.style.background = p.color;
+      tile.style.borderColor = p.color;
+    }
+    const img = document.createElement("img");
+    img.className = "tile-img";
+    img.src = p.image;
+    img.draggable = false;
+    tile.appendChild(img);
+  } else if (p.color) {
     tile.classList.add("tinted");
     tile.style.background = p.color;
     tile.style.borderColor = p.color;
@@ -985,18 +1205,43 @@ function renderSwatches(selected) {
   }
 }
 
-function openModal({ mode, id, name = "", text = "", color = "", title }) {
-  modalState = { mode, id, color };
+function openModal({ mode, id, name = "", text = "", color = "", image = "", showImage = false, copyImage = false, title }) {
+  modalState = { mode, id, color, image, showImage, copyImage };
   modal.title.textContent = title;
   modal.name.value = name;
   modal.text.value = text;
-  modal.text.classList.toggle("hidden", mode !== "edit");
+  syncModalImageUi(mode);
   modal.delete.classList.toggle("hidden", mode !== "edit");
   disarmButton(modal.delete, t("delete"));
   renderSwatches(color);
   modal.root.classList.remove("hidden");
   modal.name.focus();
   modal.name.select();
+}
+
+// Keep all image-related modal controls consistent with modalState.
+function syncModalImageUi(mode) {
+  const { image, showImage, copyImage } = modalState;
+  const hasImg = !!image;
+  // Pure image prompts have no text field — the name doubles as the copy text.
+  modal.text.classList.toggle("hidden", mode !== "edit" || copyImage);
+  modal.name.placeholder = copyImage ? t("imageNamePh") : t("namePh");
+  modal.imgWrap.classList.toggle("hidden", !hasImg);
+  modal.addIcon.classList.toggle("hidden", hasImg);
+  // The image of an image prompt cannot be removed, only replaced.
+  modal.removeImg.classList.toggle("hidden", copyImage);
+  if (hasImg) {
+    modal.img.src = image;
+    modal.showImage.classList.toggle("active", showImage);
+    modal.showText.classList.toggle("active", !showImage);
+  }
+}
+
+async function startImageCreate() {
+  const img = await invoke("get_clipboard_image");
+  const data = img || await invoke("pick_image_file");
+  if (!data) return;
+  openModal({ mode: "image-create", title: t("imageModalTitle"), image: data, showImage: true, copyImage: true });
 }
 function closeModal() {
   modal.root.classList.add("hidden");
@@ -1014,15 +1259,23 @@ async function confirmModal() {
   if (!name) { modal.name.focus(); return; }
 
   const color = modalState.color || "";
+  const image = modalState.image || "";
+  // NOTE: Tauri expects camelCase keys for snake_case Rust args.
+  const showImage = image ? modalState.showImage : false;
+  const copyImage = image ? modalState.copyImage : false;
   if (modalState.mode === "create") {
     const text = inputEl.value.trim();
     if (!text) { closeModal(); return; }
-    await invoke("add_prompt", { name, text, color });
+    await invoke("add_prompt", { name, text, color, image, showImage, copyImage });
     inputEl.value = "";
     autoGrow(inputEl);
     saveBtn.disabled = true;
+  } else if (modalState.mode === "image-create") {
+    // The name doubles as the copy text when the tile is switched to "Text".
+    await invoke("add_prompt", { name, text: name, color, image, showImage, copyImage });
   } else {
-    await invoke("update_prompt", { id: modalState.id, name, text: modal.text.value, color });
+    const text = copyImage ? name : modal.text.value;
+    await invoke("update_prompt", { id: modalState.id, name, text, color, image, showImage, copyImage });
   }
   closeModal();
   await renderGrid();
@@ -1038,7 +1291,10 @@ async function editPrompt(id) {
       name: p.name,
       text: p.text,
       color: p.color || "",
-      title: t("editModalTitle"),
+      image: p.image || "",
+      showImage: p.show_image || false,
+      copyImage: p.copy_image || false,
+      title: p.copy_image ? t("imageEditTitle") : t("editModalTitle"),
     });
   }
 }
@@ -1061,10 +1317,6 @@ function renderLibrary() {
     row.className = "lib-item";
     row.title = t("edit");
 
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    if (p.color) dot.style.background = p.color;
-
     const body = document.createElement("span");
     body.className = "lib-body";
     const name = document.createElement("span");
@@ -1075,7 +1327,19 @@ function renderLibrary() {
     text.textContent = p.text;
     body.append(name, text);
 
-    row.append(dot, body);
+    // Image prompts get a thumbnail, text prompts the color dot.
+    if (p.show_image && p.image) {
+      const thumb = document.createElement("img");
+      thumb.className = "lib-thumb";
+      thumb.src = p.image;
+      thumb.draggable = false;
+      row.append(thumb, body);
+    } else {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      if (p.color) dot.style.background = p.color;
+      row.append(dot, body);
+    }
 
     // Place on the current layout: drag the row onto the grid, or one click.
     row.addEventListener("pointerdown", (e) => {
@@ -1235,6 +1499,47 @@ function bind() {
 
   modal.confirm.addEventListener("click", confirmModal);
   modal.cancel.addEventListener("click", closeModal);
+  modal.name.addEventListener("keydown", (e) => { if (e.key === "Enter") confirmModal(); });
+
+  // Image / Text display toggle (text mode shows the name on the tile).
+  modal.showImage.addEventListener("click", () => {
+    if (!modalState) return;
+    modalState.showImage = true;
+    syncModalImageUi(modalState.mode);
+  });
+  modal.showText.addEventListener("click", () => {
+    if (!modalState) return;
+    modalState.showImage = false;
+    syncModalImageUi(modalState.mode);
+  });
+  modal.replaceImg.addEventListener("click", async () => {
+    if (!modalState) return;
+    const data = await invoke("pick_image_file");
+    if (!data) return;
+    modalState.image = data;
+    modalState.showImage = true;
+    syncModalImageUi(modalState.mode);
+  });
+  // Icon image for a text prompt: shown on the tile, never copied.
+  modal.addIcon.addEventListener("click", async () => {
+    if (!modalState) return;
+    const data = await invoke("pick_image_file");
+    if (!data) return;
+    modalState.image = data;
+    modalState.showImage = true;
+    modalState.copyImage = false;
+    syncModalImageUi(modalState.mode);
+  });
+  modal.removeImg.addEventListener("click", () => {
+    if (!modalState) return;
+    modalState.image = "";
+    modalState.showImage = false;
+    syncModalImageUi(modalState.mode);
+  });
+
+  // Image button in the composer bar.
+  $("image-btn").addEventListener("click", startImageCreate);
+
   // Free color choice from the native color-wheel dialog.
   $("color-pick").addEventListener("input", (e) => {
     if (!modalState) return;
@@ -1251,8 +1556,6 @@ function bind() {
     await renderGrid();
     if (!libraryEl.classList.contains("hidden")) renderLibrary();
   });
-  modal.name.addEventListener("keydown", (e) => { if (e.key === "Enter") confirmModal(); });
-  // pointerdown (not click): selecting text that ends outside an input must not close.
   modal.root.addEventListener("pointerdown", (e) => { if (e.target === modal.root) closeModal(); });
 
   $("gear").addEventListener("click", () => {
@@ -1380,8 +1683,53 @@ function bind() {
     else if (!settingsEl.classList.contains("hidden")) settingsEl.classList.add("hidden");
   });
 
+  // Updates: manual check in the settings + daily background notification.
+  let updateInfo = null;
+  let statusTimer = null;
+  const updateBtn = $("update-btn");
+  const updateStatus = $("update-status");
+  // Temporary status message; falls back to the version label after 5s.
+  const flashStatus = (txt) => {
+    updateStatus.textContent = txt;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { updateStatus.textContent = versionLabel; }, 5000);
+  };
+  const offerUpdate = (info) => {
+    updateInfo = info;
+    updateBtn.textContent = t("installUpdate").replace("{v}", info.version);
+  };
+  updateBtn.addEventListener("click", async () => {
+    updateBtn.disabled = true;
+    try {
+      if (updateInfo?.available) {
+        await invoke("install_update", { url: updateInfo.url }); // app exits
+        return;
+      }
+      const info = await invoke("check_update");
+      if (info.available) offerUpdate(info);
+      else flashStatus(t("upToDate"));
+    } catch (err) {
+      flashStatus(t("updateFailed"));
+      toast(String(err));
+    }
+    updateBtn.disabled = false;
+  });
+  $("opt-autoupdate").addEventListener("change", (e) => {
+    invoke("set_auto_update", { enabled: e.target.checked });
+  });
+  listen("update-available", (e) => {
+    offerUpdate(e.payload);
+    toast(t("updateAvailable").replace("{v}", e.payload.version), {
+      label: t("installNow"),
+      onClick: () =>
+        invoke("install_update", { url: e.payload.url }).catch((err) =>
+          toast(String(err))
+        ),
+    });
+  });
+
   listen("theme-changed", (e) => applyTheme(e.payload));
-  // "Edit prompt" chosen in a floating pill's right-click menu.
+  // "Edit text" chosen in a floating pill's right-click menu.
   listen("edit-prompt", (e) => editPrompt(String(e.payload)));
 }
 
@@ -1398,17 +1746,23 @@ async function init() {
   $("opt-minimize").checked = settings.minimize_to_tray === true;
   $("opt-autostart").checked = settings.autostart === true;
   $("opt-startmin").checked = settings.start_minimized === true;
+  $("opt-autoupdate").checked = settings.auto_update !== false;
   $("tile-font").value = settings.tile_font || "system";
   $("tile-size").value = String(settings.tile_size ?? 0);
+  invoke("app_version").then((v) => {
+    versionLabel = `v${v}`;
+    $("update-status").textContent = versionLabel;
+  }).catch(() => {});
   applyTileStyle();
   autoGrow(inputEl);
   inputEl.focus();
-  // First paint can measure before the webview settles on its monitor's DPI;
-  // re-fit once everything is stable.
-  setTimeout(() => {
+  // Reveal the window only after the first fully fitted paint — the user
+  // never sees the text sizing itself.
+  requestAnimationFrame(() => {
     fitCache.clear();
     fitAllTiles();
-  }, 250);
+    requestAnimationFrame(() => invoke("show_main_window").catch(() => {}));
+  });
 }
 
 init();

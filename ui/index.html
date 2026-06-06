@@ -38,6 +38,11 @@
   </section>
 
   <footer class="composer">
+    <button id="image-btn" class="icon-btn composer-img-btn" data-i18n-title="addImage" aria-label="Add image">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path fill="currentColor" d="M21 3H3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm0 16H3V5h18v14Zm-5.5-9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM8.5 14l2-2.5 2 2.5 2.5-3 3.5 5H5l3.5-4.5Z"/>
+      </svg>
+    </button>
     <textarea id="input" class="input" rows="1" data-i18n-ph="promptPh" aria-label="Text"></textarea>
     <button id="save" class="primary-btn" data-i18n="save" disabled>Save</button>
   </footer>
@@ -47,6 +52,17 @@
     <div class="modal">
       <h2 id="modal-title" class="modal-title">Name this text</h2>
       <input id="modal-name" class="modal-input" type="text" data-i18n-ph="namePh" maxlength="80" />
+      <!-- Image preview + display toggle (visible only when the entry has an image) -->
+      <div id="modal-img-wrap" class="modal-img-wrap hidden">
+        <img id="modal-img" class="modal-preview-img" src="" alt="" draggable="false" />
+        <div class="modal-display-row">
+          <button type="button" id="modal-show-image" class="ghost-btn" data-i18n="showImageBtn">Image</button>
+          <button type="button" id="modal-show-text" class="ghost-btn" data-i18n="showTextBtn">Text</button>
+          <button type="button" id="modal-replace-img" class="ghost-btn" data-i18n="replaceImage">Replace</button>
+          <button type="button" id="modal-remove-img" class="ghost-btn danger-btn" data-i18n="removeImage">Remove image</button>
+        </div>
+      </div>
+      <button type="button" id="modal-add-icon" class="ghost-btn hidden" data-i18n="addIcon">Image as icon</button>
       <textarea id="modal-text" class="modal-input modal-text hidden" rows="6" data-i18n-ph="promptPh"></textarea>
       <div id="color-row" class="swatches"></div>
       <input id="color-pick" class="color-pick" type="color" tabindex="-1" aria-hidden="true" />
@@ -157,6 +173,17 @@
           <button id="import-btn" class="ghost-btn" data-i18n="import">Import</button>
           <button id="export-csv" class="ghost-btn">CSV</button>
           <button id="export-txt" class="ghost-btn">TXT</button>
+        </div>
+      </div>
+      <div class="field">
+        <span data-i18n="updates">Updates</span>
+        <div class="update-row">
+          <span id="update-status" class="update-status"></span>
+          <button id="update-btn" class="ghost-btn" data-i18n="checkUpdate">Check for updates</button>
+          <label class="auto-update" data-i18n-title="autoUpdateHint">
+            <span data-i18n="autoUpdate">Auto update</span>
+            <input id="opt-autoupdate" type="checkbox" class="switch" />
+          </label>
         </div>
       </div>
       <div class="field">

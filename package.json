@@ -1,15 +1,15 @@
 {
   "name": "clipboard-saver",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Local offline clipboard manager with floating quick-copy buttons",
   "author": "BG Coding",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "release:commit": "git add -A && git commit -m \"Clipboard-Saver 1.8.0: upstream feature sync\"",
+    "release:commit": "git add -A && git commit -m \"Clipboard-Saver 1.8.1: hotfix\"",
     "release:push": "git push -u origin master",
-    "release:publish": "gh release create v1.8.0 src-tauri/target/release/clipboard-saver.exe \"src-tauri/target/release/bundle/nsis/Clipboard-Saver_1.8.0_x64-setup.exe\" --title \"Clipboard-Saver 1.8.0\" --repo wbgcoding/Clipboard-Saver --notes-file docs/release-notes.md"
+    "release:publish": "gh release create v1.8.1 src-tauri/target/release/clipboard-saver.exe \"src-tauri/target/release/bundle/nsis/Clipboard-Saver_1.8.1_x64-setup.exe\" --title \"Clipboard-Saver 1.8.1\" --repo wbgcoding/Clipboard-Saver --notes-file docs/release-notes.md"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0"

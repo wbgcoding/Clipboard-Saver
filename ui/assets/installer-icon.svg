@@ -22,11 +22,18 @@
       <stop offset="0" stop-color="#fbe7c0"/>
       <stop offset="1" stop-color="#e0b376"/>
     </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b9bff"/>
+      <stop offset="1" stop-color="#3b6ef6"/>
+    </linearGradient>
     <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#1e293b" flood-opacity="0.30"/>
     </filter>
     <filter id="penShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="6" dy="12" stdDeviation="10" flood-color="#1e293b" flood-opacity="0.35"/>
+    </filter>
+    <filter id="badgeShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1e293b" flood-opacity="0.35"/>
     </filter>
   </defs>
 
@@ -36,14 +43,10 @@
 
   <!-- Notepad, slightly tilted -->
   <g transform="rotate(-4 256 268)">
-    <!-- page stack behind -->
     <rect x="124" y="126" width="268" height="328" rx="16" fill="#cbd5e1"/>
     <rect x="120" y="120" width="268" height="328" rx="16" fill="#e2e8f0"/>
-    <!-- top sheet -->
     <rect x="116" y="112" width="268" height="330" rx="14" fill="url(#paper)" stroke="#aab6c4" stroke-width="2" filter="url(#soft)"/>
-    <!-- red margin -->
     <rect x="156" y="146" width="4" height="270" fill="#ef4444" fill-opacity="0.5"/>
-    <!-- ruled lines -->
     <g fill="#9db2c8" fill-opacity="0.55">
       <rect x="134" y="178" width="232" height="5" rx="2.5"/>
       <rect x="134" y="216" width="232" height="5" rx="2.5"/>
@@ -52,13 +55,11 @@
       <rect x="134" y="330" width="232" height="5" rx="2.5"/>
       <rect x="134" y="368" width="232" height="5" rx="2.5"/>
     </g>
-    <!-- handwriting scribbles -->
     <g stroke="#475569" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.75">
       <path d="M176 170 q22 -12 44 0 t44 0 t40 0"/>
       <path d="M176 208 q20 -11 40 0 t40 0 t56 0"/>
       <path d="M176 246 q24 -12 48 0 t44 0"/>
     </g>
-    <!-- spiral binding -->
     <g>
       <g fill="#64748b">
         <circle cx="164" cy="116" r="11"/>
@@ -79,19 +80,23 @@
 
   <!-- Pencil in the foreground, lying across the pad -->
   <g transform="translate(108 408) rotate(-33)" filter="url(#penShadow)">
-    <!-- eraser -->
     <rect x="-34" y="-23" width="40" height="46" rx="14" fill="#f87171"/>
-    <!-- ferrule -->
     <rect x="-2" y="-23" width="34" height="46" fill="url(#metal)"/>
     <rect x="3" y="-23" width="5" height="46" fill="#52525b" fill-opacity="0.45"/>
     <rect x="20" y="-23" width="5" height="46" fill="#52525b" fill-opacity="0.45"/>
-    <!-- body -->
     <rect x="32" y="-23" width="206" height="46" fill="url(#penBody)"/>
     <rect x="32" y="-23" width="206" height="14" fill="#ffffff" fill-opacity="0.22"/>
     <rect x="32" y="11" width="206" height="12" fill="#78350f" fill-opacity="0.25"/>
-    <!-- wood -->
     <path d="M238 -23 L294 -4 L294 4 L238 23 Z" fill="url(#wood)"/>
-    <!-- graphite tip -->
     <path d="M294 -4 L316 0 L294 4 Z" fill="#374151"/>
+  </g>
+
+  <!-- Installer badge: a download/install mark, bottom-right -->
+  <g filter="url(#badgeShadow)">
+    <circle cx="392" cy="392" r="90" fill="#ffffff"/>
+    <circle cx="392" cy="392" r="77" fill="url(#badge)"/>
+    <path d="M392 346V406" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+    <path d="M368 384l24 24 24-24" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="356" y="428" width="72" height="14" rx="7" fill="#ffffff"/>
   </g>
 </svg>

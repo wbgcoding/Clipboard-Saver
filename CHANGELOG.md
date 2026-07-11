@@ -1,7 +1,88 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to **Clipboard-Saver**. Download the latest version from the
 [releases page](../../releases/latest).
+
+## 2.4.0 (2026-07-11)
+
+A polish release: a full-screen viewer for your images and videos, cleaner
+tooltips, faster and better-named screenshots, and a tidier expert menu.
+
+### Added
+- **Full-screen media viewer**: click any preview image or video in an edit or
+  library dialog to open it full-screen. Scroll to zoom in (up to 8×), drag to
+  pan around, and close it with the **✕** in the corner or the Escape key.
+- **Favorite star in the title bar**: the edit and add dialogs now show a gold
+  **★** in their title bar — one click marks a snippet as a favorite, replacing
+  the old checkbox row.
+- **Forget recent searches**: each entry in the recent-searches dropdown now has
+  its own **✕** to remove it from the list.
+- **Tooltip toggle**: a new expert-menu option turns the small icon tooltips off
+  if you prefer a quieter interface.
+
+### Improved
+- **Redesigned tooltips**: every hover hint now uses the same themed popup, and a
+  tooltip that is left open hides itself automatically after a short while.
+- **Better screenshot names**: captures are now saved as `Screenshot` plus an
+  exact date and time; capturing a single window also adds that app's name.
+- **Tidier expert menu**: the settings that adjust a feature now sit directly
+  under that feature's on/off switch and disappear when it is turned off, so
+  there are no more stray sliders for a disabled feature. The optional "extras"
+  groups start collapsed.
+- **The recent-searches dropdown no longer pops up on its own** when you open the
+  library or history — it appears only when you click the search field again.
+- **Consistent look**: the three-dot menu on every tile now matches your theme
+  regardless of the tile's color or content, scrollbars sit flush against the
+  edge, the close **✕** is in the same spot in every popup, and the grid-size
+  **✕** is crisp and centered. A clearer chain-link icon marks chained snippets.
+- The app title can no longer be accidentally selected as text.
+
+### Fixed
+- **Saving a large screenshot as a button no longer freezes the app** — captures
+  are stored efficiently and appear instantly.
+
+## 2.2.0 (2026-06-20)
+
+A big update: a built-in screenshot tool, a searchable snippet library, text
+variables, a copy history, a much larger expert menu, and smoother, sharper
+floating buttons.
+
+### Added
+- **Screenshot tool**: a camera button captures a screen region or a whole
+  window — even protected ones like the Task Manager — and turns it straight
+  into a copy button. The capture overlay opens instantly.
+- **Searchable library**: the header list is now a search box over all your
+  snippets — type to filter, copy with one click, edit with the pencil icon,
+  and optionally close the library right after copying. Filter by color or type.
+- **Text variables**: write `{#{Name}#}` placeholders in a snippet and you're
+  asked to fill them in when you copy it.
+- **Copy history**: a journal of recently copied and most-used snippets with
+  optional timestamps and an adjustable retention time — and it can be turned
+  off completely for privacy.
+- **Drag & drop**: drop a file, image or text onto the window to create a
+  button right away.
+- **Expert menu, reorganised and expanded**: tidy tabs (Features / Appearance /
+  Privacy / Media) with size scaling for the UI, popups, icons and buttons,
+  options to hide the logo or the title, the **"Copied!" text size and font**,
+  **floating-button opacity**, history settings, and a guarded reset.
+- **Auto-fit "Copied!" text**: the confirmation text scales to the button or
+  floating pill (or pick a fixed size and font).
+
+### Improved
+- The screenshot overlay now opens **instantly** instead of taking a few
+  seconds.
+- Floating text buttons resize **smoothly** and always keep their text fully
+  visible — they never collapse into a circle and never clip; text and button
+  scale up together to the screen size.
+- You can drag a floating button only on the visible pill, not on the
+  invisible area around its rounded corners.
+- All 20 languages are fully translated, including every new menu and option.
+
+### Fixed
+- Right-clicking a floating button no longer changes its size.
+- Screenshot capture works for windows that previously came out blank.
+- The update check no longer mis-orders version numbers.
+- Various small layout and resize glitches on the floating buttons.
 
 ## 1.8.0 (2026-06-07)
 

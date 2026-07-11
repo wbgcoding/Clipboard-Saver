@@ -7,12 +7,19 @@ src-tauri/target/
 src-tauri/gen/schemas/
 
 CLAUDE.md
-.claude/
-BACKUP.bat
-.remember/
 GEMINI.md
-FUTUREUPDATES.md
+AGENTS.md
+COPILOT.md
+.claude/
 .gemini/
 .omg/
 .playwright-mcp/
 graphify-out/
+BACKUP.bat
+.remember/
+FUTUREUPDATES.md
+.github/copilot-instructions.md
+
+
+# Claude/agent local files
+.gitignore

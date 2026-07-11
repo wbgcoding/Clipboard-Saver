@@ -73,9 +73,9 @@ goto :end
 :fail
 echo.
 echo Build FAILED. Check the messages above.
-pause
+timeout /t 30
 exit /b 1
 
 :end
-pause
+timeout /t 30
 exit /b 0

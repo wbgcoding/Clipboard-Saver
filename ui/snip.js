@@ -5,6 +5,7 @@
 // Coordinates are mapped by RATIO against the displayed frozen image, never via
 // the window scale factor — so the mapping is pixel-exact on any DPI mix.
 const { invoke, convertFileSrc } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 
 const bg = document.getElementById("snip-bg");
 const mask = {
@@ -41,13 +42,48 @@ const SEED = {
 const T = { ...((navigator.language || "en").toLowerCase().startsWith("de") ? SEED.de : SEED.en) };
 hint.textContent = T.hint;
 
-(async () => {
+// The overlay WINDOW is reused across snips so its WebView2 stays warm (creating
+// a fresh one was the slow part). beginSession() runs once on first load and
+// again on every "snip-begin" the backend fires for a reused window.
+let i18nLoaded = false;
+
+function resetSession() {
+  start = null;
+  busy = false;
+  windows = [];
+  sizeLabel.textContent = "";
+  hint.classList.remove("hidden", "error");
+  hint.textContent = T.hint;
+  fullDim();
+}
+
+async function beginSession() {
+  resetSession();
   const b = await invoke("snip_background", { index: IDX });
   if (!b) { invoke("snip_cancel"); return; }
   FULL_W = b.width || 1;
   FULL_H = b.height || 1;
+  // Reveal the overlay only once the frozen image has decoded, so it never
+  // appears blank first. onerror presents too, so a rare decode failure can't
+  // leave it stuck hidden; a timer is the final safety net in case a hidden
+  // webview ever throttles the load event. present() is idempotent.
+  let presented = false;
+  let timer = 0;
+  const present = () => {
+    if (presented) return;
+    presented = true;
+    if (timer) clearTimeout(timer);
+    invoke("snip_present").catch(() => {});
+  };
+  bg.onload = present;
+  bg.onerror = present;
   bg.src = b.is_file ? convertFileSrc(b.src) : b.src;
-  try { windows = await invoke("snip_windows", { index: IDX }); } catch { windows = []; }
+  timer = setTimeout(present, 500);
+  // Hover highlight loads in the background — it must not gate the overlay.
+  invoke("snip_windows", { index: IDX }).then((w) => { windows = w || []; }).catch(() => { windows = []; });
+  // Localized hint/error text: load once, then reuse for every later session.
+  if (i18nLoaded) return;
+  i18nLoaded = true;
   Promise.all([invoke("get_settings"), import("./i18n.js")])
     .then(([s, { I18N, LANGS }]) => {
       const pref = (s.language && s.language !== "auto"
@@ -58,10 +94,15 @@ hint.textContent = T.hint;
       const d = I18N[lang] || I18N.en;
       T.hint = d.snipHint ?? I18N.en.snipHint;
       T.failed = d.snipFailed ?? I18N.en.snipFailed ?? T.failed;
-      hint.textContent = T.hint;
+      if (!hint.classList.contains("error")) hint.textContent = T.hint;
     })
-    .catch(() => { hint.textContent = T.hint; });
-})();
+    .catch(() => {});
+}
+
+// Begin now only if a snip is already in flight (cold-build path); otherwise stay
+// idle — the window may be a startup pre-warm. Reused snips arrive via "snip-begin".
+invoke("snip_should_begin").then((go) => { if (go) beginSession().catch(() => {}); }).catch(() => {});
+listen("snip-begin", () => beginSession().catch(() => {}));
 
 // ---- Ratio mapping between CSS (cursor) and stitched-image pixels ----
 // The frozen image fills the overlay, which physically covers the desktop, so a

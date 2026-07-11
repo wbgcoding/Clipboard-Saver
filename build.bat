@@ -1,10 +1,10 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 title Prompt Saver - Build
 cd /d "%~dp0"
 
 echo ============================================
-echo  Prompt Saver - Portable EXE Build
+echo  Prompt Saver - Build (installer + portable)
 echo ============================================
 echo.
 
@@ -32,22 +32,28 @@ if not exist "node_modules\" (
 echo [INFO] Regenerating app icons from ui\assets\icon.svg...
 rem NOTE: "--" is required, otherwise npm swallows the path argument and
 rem tauri icon silently falls back to ./app-icon.png (old exe icon kept).
-rem Output fully silenced: tauri icon always generates Android/iOS sets too
-rem and logs them on stderr - irrelevant noise for this Windows-only tool.
 call npm run tauri -- icon ui/assets/icon.svg >nul 2>nul
 if errorlevel 1 echo [WARN] Icon generation failed - exe keeps the previous icon.
 if not exist "src-tauri\icons\icon.ico" echo [WARN] icons\icon.ico missing!
-rem Windows-only project: drop generated mobile/macOS/Store icon sets right away
-rem (NSIS + portable exe only use icon.ico and the plain PNG sizes).
+rem Windows-only project: drop generated mobile/macOS/Store icon sets right away.
 if exist "src-tauri\icons\android" rmdir /s /q "src-tauri\icons\android"
 if exist "src-tauri\icons\ios" rmdir /s /q "src-tauri\icons\ios"
 if exist "src-tauri\icons\icon.icns" del /q "src-tauri\icons\icon.icns"
 del /q "src-tauri\icons\Square*.png" 2>nul
 del /q "src-tauri\icons\StoreLogo.png" 2>nul
 
-echo [INFO] Building release exe ^(this can take a few minutes^)...
+rem Installer icon = app logo + a small "install" badge (icons\installer-icon.ico).
+echo [INFO] Regenerating installer icon...
+call npm run tauri -- icon ui/assets/installer-icon.svg -o "%TEMP%\ps-instico" >nul 2>nul
+if exist "%TEMP%\ps-instico\icon.ico" copy /y "%TEMP%\ps-instico\icon.ico" "src-tauri\icons\installer-icon.ico" >nul
+if exist "%TEMP%\ps-instico" rmdir /s /q "%TEMP%\ps-instico"
+
+echo [INFO] Building release exe + installer ^(this can take a few minutes^)...
 echo.
-call npm run build -- --no-bundle
+rem Full bundle: produces BOTH the portable exe (target\release\prompt-saver.exe)
+rem AND the NSIS installer (target\release\bundle\nsis). Never pass --no-bundle
+rem here or the installer is skipped (that was the "no installer created" bug).
+call npm run build
 if errorlevel 1 goto :fail
 
 set "EXE=%~dp0src-tauri\target\release\prompt-saver.exe"
@@ -56,26 +62,47 @@ if not exist "%EXE%" (
     goto :fail
 )
 
-for %%A in ("%EXE%") do set "SIZE=%%~zA"
-set /a SIZE_MB=%SIZE% / 1048576
+rem Locate the freshly built NSIS installer (newest *-setup.exe).
+set "INSTALLER="
+for /f "delims=" %%F in ('dir /b /a-d /o-d "%~dp0src-tauri\target\release\bundle\nsis\*-setup.exe" 2^>nul') do (
+    if not defined INSTALLER set "INSTALLER=%~dp0src-tauri\target\release\bundle\nsis\%%F"
+)
+
+rem Collect both artifacts in dist\ for convenience (clean, predictable names).
+set "DIST=%~dp0dist"
+if not exist "%DIST%" mkdir "%DIST%"
+copy /y "%EXE%" "%DIST%\Prompt Saver.exe" >nul || echo [WARN] Could not update the portable exe in dist - is it currently running? Close it and rebuild.
+if defined INSTALLER copy /y "%INSTALLER%" "%DIST%\" >nul
+rem pdfium.dll next to the portable exe so PDF previews work standalone.
+if exist "%~dp0src-tauri\target\release\pdfium.dll" copy /y "%~dp0src-tauri\target\release\pdfium.dll" "%DIST%\" >nul
 
 echo.
 echo ============================================
-echo  DONE: %EXE%
-echo  Size: ~%SIZE_MB% MB
+echo  DONE
+echo  Portable : %DIST%\Prompt Saver.exe
+if defined INSTALLER (
+    echo  Installer: %INSTALLER%
+) else (
+    echo  [WARN] Installer not found - the bundle step may have failed.
+)
 echo ============================================
 echo.
-choice /c YN /m "Open output folder"
+rem Offer to open the output folder, but never block: default to "no" after 10s
+rem so the window can close itself unattended.
+choice /c YN /t 10 /d N /m "Open output folder (closes automatically)"
 if errorlevel 2 goto :end
-explorer /select,"%EXE%"
+explorer "%DIST%"
 goto :end
 
 :fail
 echo.
 echo Build FAILED. Check the messages above.
-pause
+echo This window closes automatically in 30 seconds...
+timeout /t 30 >nul
 exit /b 1
 
 :end
-pause
+echo.
+echo Closing automatically in 8 seconds...
+timeout /t 8 >nul
 exit /b 0

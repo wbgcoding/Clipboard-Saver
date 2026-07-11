@@ -15,6 +15,7 @@ const pill = document.getElementById("pill");
 const label = document.getElementById("label");
 const menu = document.getElementById("menu");
 const resizeEl = document.getElementById("resize");
+const rzCatch = document.getElementById("rz-catch");
 
 let scale = 1;
 let tileSize = 0; // global text size setting (0 = auto)
@@ -22,6 +23,8 @@ let globalFontKey = "system";
 let copySize = 0; // expert copy-text size (0 = auto-fit to the pill)
 let copyFont = ""; // expert copy-text font key ("" = pill font)
 let pFont = ""; // per-prompt overrides ("" / 0 = follow settings)
+let cooldownMs = 2000; // re-copy throttle for this pill (expert value)
+let lastCopyTs = 0;
 let pSize = 0;
 let pCaptionSize = 0; // per-prompt caption size (0 = default, 1 = auto)
 let menuOpen = false;
@@ -39,6 +42,9 @@ const PILL_BORDER = 5; // colored frame width around media pills
 const SIZE_EPSILON = 2; // px tolerance ending the self-healing resize loop
 const FILE_POLL_MS = 5000;
 const COPIED_MS = 900;
+const RING_MIN = 8; // smallest resize-ring thickness (px)
+const RING_MAX = 60; // largest resize-ring thickness (px)
+const RING_FRAC = 0.18; // ring thickness as a fraction of the shorter window side
 
 // Resizes and visibility flips can leave the looping video paused — make
 // sure a visible video is always playing again afterwards. Only a pause made
@@ -52,10 +58,10 @@ function ensureVideoPlaying() {
 
 // Text pills use a fixed, readable font size; the window WIDTH grows with
 // the label instead (capped, then ellipsis kicks in).
-function pillFontSize() {
+function pillFontSize(effScale = scale) {
   // pSize/tileSize: 0 = inherit, 1 = auto-fit (treated as default here).
   const base = pSize > 1 ? pSize : tileSize > 1 ? tileSize : PILL_FONT_DEFAULT;
-  return Math.round(base * scale);
+  return Math.round(base * effScale);
 }
 
 // Current pill box at the active scale. Media pills follow their aspect
@@ -73,14 +79,23 @@ function pillBox() {
     }
     return { w: w + 2 * borderW, h: h + 2 * borderW };
   }
-  label.style.fontSize = `${pillFontSize()}px`;
-  // Width follows the label so the text always fits inside the window, floored to
-  // a pill ratio so it never rounds into a circle. No upper cap: the window (and
-  // font) scale up together until the drag hits the screen-size limit (sMax), so
-  // the text can never overflow or get clipped by the window edge.
   const RATIO = 1.3;
   const h = PILL_H * scale;
-  const w = Math.max(PILL_TEXT_MIN_W, label.scrollWidth + 60, Math.round(h * RATIO));
+  // Font tracks the ACTUAL window height, not the raw scale. If the window is ever
+  // capped so it can't grow any further (OS size limit, DPI handoff), the text
+  // stops growing with it instead of ballooning on past the frozen pill edge — the
+  // reported "only the text keeps getting bigger" bug. When the box grows normally
+  // innerHeight equals h, so this is exactly the old base*scale. min() guards a
+  // stale-large innerHeight (mid-shrink) from oversizing the font.
+  const effH = Math.min(h, window.innerHeight || h);
+  label.style.fontSize = `${pillFontSize(effH / PILL_H)}px`;
+  // Width hugs the label. Padding AND the min width scale WITH the pill, so it keeps
+  // shrinking (and growing) together with the text instead of stalling at a fixed
+  // floor while only the text changes. Floored to a pill ratio so it never rounds
+  // into a circle. (At scale 1 this is exactly the old 200 min / 60 padding.)
+  const padX = Math.round(30 * scale);
+  const minW = Math.round(PILL_TEXT_MIN_W * scale);
+  const w = Math.max(minW, label.scrollWidth + 2 * padX, Math.round(h * RATIO));
   return { w, h };
 }
 
@@ -116,6 +131,11 @@ async function applySettings() {
   const t = TXT[lang];
   document.getElementById("feedback").textContent = t.copied;
   document.getElementById("size-label").textContent = t.size;
+  // Localized tooltip for the S/M/L size buttons (visible letters stay universal).
+  for (const b of document.querySelectorAll(".size-row [data-scale]")) {
+    b.title = `${t.size} ${b.textContent}`;
+    b.setAttribute("aria-label", b.title);
+  }
   document.getElementById("menu-edit").textContent = t.edit;
   document.getElementById("menu-remove").textContent = t.remove;
   const closeBtn = document.getElementById("menu-close");
@@ -123,10 +143,15 @@ async function applySettings() {
   closeBtn.setAttribute("aria-label", t.close);
   document.getElementById("file-error").textContent = t.missing;
   applyVideoPrefs(videoEl, s.video_prefs && s.video_prefs[promptId]);
-  scale = (s.float_scale && s.float_scale[promptId]) || 1;
+  // Clamp to the backend's stored range (0.5–2.0): a corrupt 0/negative/NaN
+  // factor would otherwise produce a degenerate (zero/inverted) window.
+  const rawScale = Number(s.float_scale && s.float_scale[promptId]);
+  scale = Number.isFinite(rawScale) && rawScale > 0 ? Math.min(2, Math.max(0.5, rawScale)) : 1;
   tileSize = Number(s.tile_size) || 0;
   globalFontKey = s.tile_font || "system";
   copySize = Number(s.ui_values?.copySize) || 0;
+  const cd = Number(s.ui_values?.copyCooldownMs);
+  cooldownMs = Number.isFinite(cd) ? cd : 2000;
   copyFont = s.ui_texts?.copyFont || "";
   document.getElementById("feedback").style.fontFamily = FONTS[copyFont] || "";
   const op = Number(s.ui_values?.floatOpacity);
@@ -150,11 +175,20 @@ function enforcePillSize() {
   }
 }
 
+// Size the resize-grip band in proportion to the pill so the resize hitbox always
+// sits right at the (rounded) edge — thin on a small pill, a comfortable ring on a
+// big one — while the inner area stays free for dragging/copying.
+function updateResizeRing() {
+  const ring = Math.max(RING_MIN, Math.min(RING_MAX, Math.round(Math.min(window.innerWidth, window.innerHeight) * RING_FRAC)));
+  resizeEl.style.setProperty("--rz", `${ring}px`);
+}
+
 let fitRaf = 0;
 window.addEventListener("resize", () => {
   cancelAnimationFrame(fitRaf);
-  fitRaf = requestAnimationFrame(enforcePillSize);
+  fitRaf = requestAnimationFrame(() => { enforcePillSize(); updateResizeRing(); });
 });
+updateResizeRing();
 
 const DRAG_THRESHOLD = 4;
 let drag = null; // {x, y, moved}
@@ -312,8 +346,10 @@ function applyPrompt(p) {
 }
 
 async function loadName() {
-  const p = await invoke("get_prompt", { id: promptId });
-  if (p) applyPrompt(p);
+  try {
+    const p = await invoke("get_prompt", { id: promptId });
+    if (p) applyPrompt(p);
+  } catch (_) {}
 }
 
 // ---- Missing-file watcher ----
@@ -486,27 +522,11 @@ document.getElementById("menu-remove").addEventListener("click", () => {
 });
 
 // ---- Drag / copy ----
-// True when the pointer is over the VISIBLE pill (its rounded capsule), so a drag
-// or copy never starts from the transparent rounded-corner area of the window.
-// While the menu is open the whole window is a valid drag surface (pill + menu).
-function onVisiblePill(e) {
-  if (menuOpen || pill.classList.contains("has-image")) return true;
-  const r = pill.getBoundingClientRect();
-  const x = e.clientX - r.left;
-  const y = e.clientY - r.top;
-  if (x < 0 || y < 0 || x > r.width || y > r.height) return false;
-  const rad = Math.min(r.width, r.height) / 2;
-  if (x >= rad && x <= r.width - rad) return true; // straight middle band
-  const cx = x < rad ? rad : r.width - rad; // nearest rounded end-cap centre
-  return (x - cx) ** 2 + (y - r.height / 2) ** 2 <= rad * rad;
-}
-
-// Drag starts on the pill (or anywhere while the menu is open) — the menu buttons
-// and resize grips handle their own presses and are excluded.
+// The whole pill window is the drag/copy surface; the menu buttons and resize
+// grips handle their own presses and are excluded.
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  if (e.target.closest(".menu") || e.target.closest(".rz")) return;
-  if (!onVisiblePill(e)) return;
+  if (e.target.closest(".menu") || e.target.closest(".rz-catch")) return;
   drag = { x: e.screenX, y: e.screenY, moved: false };
 });
 
@@ -542,7 +562,10 @@ window.addEventListener("mouseup", async () => {
     ensureVideoPlaying();
   } else if (menuOpen) {
     closeMenu(); // a click on the pill closes the open menu
+  } else if (cooldownMs && Date.now() - lastCopyTs < cooldownMs) {
+    // Same pill copied moments ago — throttle to avoid accidental repeats.
   } else if (await invoke("copy_prompt", { id: promptId }).catch(() => false)) {
+    lastCopyTs = Date.now();
     showCopied();
     invoke("record_copy", { id: promptId }).catch(() => {});
   }
@@ -552,11 +575,6 @@ window.addEventListener("mouseup", async () => {
 // The grabbed edge/corner follows the cursor 1:1; the opposite side stays put.
 // Content scales with the window (aspect kept), up to nearly full screen.
 const SCALE_MIN = 0.3;
-// Which edges a grip moves: x/y in {-1,0,1}.
-const RZ_DIR = {
-  n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
-  ne: [1, -1], nw: [-1, -1], se: [1, 1], sw: [-1, 1],
-};
 let resizing = null;
 let rzRaf = 0;
 let rzPending = null;
@@ -599,38 +617,64 @@ async function endResize() {
   ensureVideoPlaying();
 }
 
-for (const handle of document.querySelectorAll(".rz")) {
-  const dir = RZ_DIR[handle.className.replace("rz rz-", "")] || [1, 1];
-  handle.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const pr = pill.getBoundingClientRect();
-    // Pill top-left in screen CSS px (works whatever side the menu is on).
-    const L = e.screenX - e.clientX + pr.left;
-    const T = e.screenY - e.clientY + pr.top;
-    // Right-click open? Collapse the menu and resize the pill itself.
-    if (menuOpen) {
-      menuOpen = false;
-      menu.classList.add("hidden");
-      document.body.classList.remove("menu-open", "menu-below", "menu-above", "menu-right", "menu-left");
-      resetResizeOverlay();
-      pill.style.width = "";
-      pill.style.height = "";
-      menuState = null;
-    }
-    const b1 = boxAtScale(1); // base size: maps cursor distance to scale
-    resizing = {
-      dirX: dir[0], dirY: dir[1],
-      L, T, w0: pr.width, h0: pr.height,
-      w1: b1.w, h1: b1.h,
-      sMax: Math.max(scale, Math.min(screen.availWidth * 0.97 / b1.w, screen.availHeight * 0.97 / b1.h)),
-    };
-    pill.classList.add("resizing");
-    if (!videoEl.classList.contains("hidden")) pauseByApp();
-    liveResize(scale); // snap the window to the pill box right away
-  });
+// Which third of the pill the pointer is in picks the resize anchor. Shared by the
+// cursor hint and the mousedown handler so both agree on edge vs corner.
+function rzDir(e) {
+  const W = window.innerWidth || 1, H = window.innerHeight || 1;
+  const dx = e.clientX < W / 3 ? -1 : e.clientX > (2 * W) / 3 ? 1 : 0;
+  const dy = e.clientY < H / 3 ? -1 : e.clientY > (2 * H) / 3 ? 1 : 0;
+  return { dx, dy };
 }
+// Cursor matches the grabbed segment: straight edges get the axis arrow (ns/ew),
+// only the rounded corners get a diagonal one — no diagonal arrow on a flat edge.
+function rzCursor(dx, dy) {
+  if (dx && dy) return dx * dy > 0 ? "nwse-resize" : "nesw-resize";
+  if (dy) return "ns-resize";
+  return "ew-resize";
+}
+rzCatch.addEventListener("mousemove", (e) => {
+  if (resizing) return; // keep the cursor locked while actively resizing
+  const { dx, dy } = rzDir(e);
+  rzCatch.style.cursor = rzCursor(dx || (dy ? 0 : 1), dy);
+});
+
+// Grab the stadium ring to resize. Which third of the pill was grabbed picks the
+// anchor (the opposite edge stays put); for the uniform pill scale that just sets
+// which way it grows. Same cursor-distance -> scale math as the old edge grips.
+rzCatch.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const d = rzDir(e);
+  let dirX = d.dx;
+  const dirY = d.dy;
+  if (!dirX && !dirY) dirX = 1; // always drive at least one axis
+  rzCatch.style.cursor = rzCursor(dirX, dirY); // lock the matching cursor
+  const pr = pill.getBoundingClientRect();
+  // Pill top-left in screen CSS px (works whatever side the menu is on).
+  const L = e.screenX - e.clientX + pr.left;
+  const T = e.screenY - e.clientY + pr.top;
+  // Right-click menu open? Collapse it and resize the pill itself.
+  if (menuOpen) {
+    menuOpen = false;
+    menu.classList.add("hidden");
+    document.body.classList.remove("menu-open", "menu-below", "menu-above", "menu-right", "menu-left");
+    resetResizeOverlay();
+    pill.style.width = "";
+    pill.style.height = "";
+    menuState = null;
+  }
+  const b1 = boxAtScale(1); // base size: maps cursor distance to scale
+  resizing = {
+    dirX, dirY,
+    L, T, w0: pr.width, h0: pr.height,
+    w1: b1.w, h1: b1.h,
+    sMax: Math.max(scale, Math.min(screen.availWidth * 0.97 / b1.w, screen.availHeight * 0.97 / b1.h)),
+  };
+  pill.classList.add("resizing");
+  if (!videoEl.classList.contains("hidden")) pauseByApp();
+  liveResize(scale); // snap the window to the pill box right away
+});
 
 window.addEventListener("mousemove", (e) => {
   if (!resizing) return;
@@ -674,7 +718,11 @@ appWin.onScaleChanged(() => {
 });
 
 (async () => {
-  document.documentElement.setAttribute("data-theme", await invoke("current_theme"));
-  applySettings();
-  loadName();
+  // A transient IPC failure must not leave the pill blank/unstyled — guard each
+  // step independently so the rest still runs.
+  try {
+    document.documentElement.setAttribute("data-theme", await invoke("current_theme"));
+  } catch (_) {}
+  applySettings().catch(() => {});
+  loadName().catch(() => {});
 })();

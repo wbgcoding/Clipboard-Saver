@@ -88,10 +88,12 @@ export function buildMediaBar(video, { onChange } = {}) {
   seek.addEventListener("pointerdown", () => (scrubbing = true));
   seek.addEventListener("pointerup", () => (scrubbing = false));
   seek.addEventListener("input", () => {
-    if (video.duration) video.currentTime = (seek.value / 1000) * video.duration;
+    // Guard against Infinity/NaN duration (still-loading or streamed video):
+    // assigning a non-finite currentTime throws.
+    if (Number.isFinite(video.duration)) video.currentTime = (seek.value / 1000) * video.duration;
   });
   video.addEventListener("timeupdate", () => {
-    if (!scrubbing && video.duration) {
+    if (!scrubbing && Number.isFinite(video.duration)) {
       seek.value = Math.round((video.currentTime / video.duration) * 1000);
     }
     time.textContent = `${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`;

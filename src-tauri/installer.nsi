@@ -69,9 +69,16 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var PortableMode
+Var PortableCheckbox
 
 Name "${PRODUCTNAME}"
-BrandingText "${COPYRIGHT}"
+; Blank the footer instead of NSIS' default "Nullsoft Install System" branding.
+!if "${COPYRIGHT}" != ""
+  BrandingText "${COPYRIGHT}"
+!else
+  BrandingText " "
+!endif
 OutFile "${OUTFILE}"
 
 ; We don't actually use this value as default install path,
@@ -263,14 +270,15 @@ Function PageReinstall
     Pop $R4
     ${IfThen} $(^RTL) = 1 ${|} nsDialogs::SetRTL $(^RTL) ${|}
 
-    ${NSD_CreateLabel} 0 0 100% 24u $R1
+    ${NSD_CreateLabel} 0 2u 100% 42u $R1
     Pop $R1
 
-    ${NSD_CreateRadioButton} 30u 50u -30u 8u $R2
+    ; Same indent/size as the install-mode (choose-users) page radios.
+    ${NSD_CreateRadioButton} 15u 50u -15u 10u $R2
     Pop $R2
     ${NSD_OnClick} $R2 PageReinstallUpdateSelection
 
-    ${NSD_CreateRadioButton} 30u 70u -30u 8u $R3
+    ${NSD_CreateRadioButton} 15u 70u -15u 10u $R3
     Pop $R3
     ; Disable this radio button if downgrading and downgrades are disabled
     !if "${ALLOWDOWNGRADES}" == "false"
@@ -382,9 +390,65 @@ Function PageLeaveReinstall
   reinst_done:
 FunctionEnd
 
-; 5. Choose install directory page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_DIRECTORY
+; 5. Combined location + portable page (one page instead of two = fewer steps).
+; Hidden for passive/update installs (those keep the existing location).
+Var DirField
+Page custom PageDir PageDirLeave
+Function PageDir
+  ${IfThen} $PassiveMode = 1 ${|} Abort ${|}
+  ${IfThen} $UpdateMode = 1 ${|} Abort ${|}
+  !insertmacro MUI_HEADER_TEXT "$(dirTitle)" "$(dirInfo)"
+  nsDialogs::Create 1018
+  Pop $0
+  ${NSD_CreateLabel} 0 0 100% 20u "$(dirInfo)"
+  Pop $0
+  ${NSD_CreateText} 0 24u 76% 13u "$INSTDIR"
+  Pop $DirField
+  ${NSD_CreateButton} 78% 23u 22% 15u "$(^BrowseBtn)"
+  Pop $0
+  ${NSD_OnClick} $0 PageDirBrowse
+  ${NSD_CreateCheckbox} 0 50u 100% 12u "$(portableCheck)"
+  Pop $PortableCheckbox
+  ${If} $PortableMode = 1
+    ${NSD_Check} $PortableCheckbox
+  ${EndIf}
+  ${NSD_OnClick} $PortableCheckbox PageDirPortable
+  ${NSD_CreateLabel} 0 66u 100% 40u "$(portableInfo)"
+  Pop $0
+  ; Last page before install: relabel the wizard's Next button to "Install".
+  GetDlgItem $0 $HWNDPARENT 1
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^InstallBtn)"
+  nsDialogs::Show
+FunctionEnd
+Function PageDirBrowse
+  ${NSD_GetText} $DirField $0
+  nsDialogs::SelectFolderDialog "$(dirInfo)" "$0"
+  Pop $1
+  ${If} $1 != error
+    ${NSD_SetText} $DirField "$1"
+  ${EndIf}
+FunctionEnd
+; Portable on -> default to the folder this setup runs from; off -> standard path.
+Function PageDirPortable
+  ${NSD_GetState} $PortableCheckbox $0
+  ${If} $0 = ${BST_CHECKED}
+    ${NSD_SetText} $DirField "$EXEDIR"
+  ${Else}
+    ${NSD_SetText} $DirField "$INSTDIR"
+  ${EndIf}
+FunctionEnd
+Function PageDirLeave
+  ${NSD_GetText} $DirField $0
+  ${If} $0 != ""
+    StrCpy $INSTDIR "$0"
+  ${EndIf}
+  ${NSD_GetState} $PortableCheckbox $0
+  ${If} $0 = ${BST_CHECKED}
+    StrCpy $PortableMode 1
+  ${Else}
+    StrCpy $PortableMode 0
+  ${EndIf}
+FunctionEnd
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder
@@ -464,13 +528,135 @@ FunctionEnd
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ;Languages
-{{#each languages}}
-!insertmacro MUI_LANGUAGE "{{this}}"
-{{/each}}
+; Explicit list (mirrors bundle.windows.nsis.languages in tauri.conf.json).
+; Turkish/Korean/Romanian stock NSIS files lack the MultiUser install-mode
+; strings, so we pre-define them right before those languages load: the
+; English fallback then finds them defined and stays silent (no compile
+; warnings), while LANGFILE still builds a properly localized LangString.
+!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "German"
+!insertmacro MUI_LANGUAGE "Spanish"
+!insertmacro MUI_LANGUAGE "French"
+!insertmacro MUI_LANGUAGE "Italian"
+!insertmacro MUI_LANGUAGE "PortugueseBR"
+!insertmacro MUI_LANGUAGE "Polish"
+!insertmacro MUI_LANGUAGE "Russian"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+!insertmacro MUI_LANGUAGE "Japanese"
+!insertmacro MUI_LANGUAGE "Dutch"
+!define MULTIUSER_TEXT_INSTALLMODE_TITLE "Kullanıcıları Seçin"
+!define MULTIUSER_TEXT_INSTALLMODE_SUBTITLE "$(^NameDA) uygulamasını hangi kullanıcılar için kurmak istediğinizi seçin."
+!define MULTIUSER_INNERTEXT_INSTALLMODE_TOP "$(^NameDA) uygulamasını yalnızca kendiniz için mi yoksa bu bilgisayardaki tüm kullanıcılar için mi kurmak istediğinizi seçin. $(^ClickNext)"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_ALLUSERS "Bu bilgisayarı kullanan herkes (tüm kullanıcılar)"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_CURRENTUSER "Yalnızca benim için"
+!insertmacro MUI_LANGUAGE "Turkish"
+!define MULTIUSER_TEXT_INSTALLMODE_TITLE "사용자 선택"
+!define MULTIUSER_TEXT_INSTALLMODE_SUBTITLE "$(^NameDA)을(를) 설치할 사용자를 선택하세요."
+!define MULTIUSER_INNERTEXT_INSTALLMODE_TOP "$(^NameDA)을(를) 나만을 위해 설치할지 이 컴퓨터의 모든 사용자를 위해 설치할지 선택하세요. $(^ClickNext)"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_ALLUSERS "이 컴퓨터를 사용하는 모든 사용자"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_CURRENTUSER "나만"
+!insertmacro MUI_LANGUAGE "Korean"
+!insertmacro MUI_LANGUAGE "Hindi"
+!insertmacro MUI_LANGUAGE "Indonesian"
+!insertmacro MUI_LANGUAGE "Vietnamese"
+!insertmacro MUI_LANGUAGE "Czech"
+!insertmacro MUI_LANGUAGE "Ukrainian"
+!insertmacro MUI_LANGUAGE "Swedish"
+!define MULTIUSER_TEXT_INSTALLMODE_TITLE "Alegeți utilizatorii"
+!define MULTIUSER_TEXT_INSTALLMODE_SUBTITLE "Alegeți pentru ce utilizatori doriți să instalați $(^NameDA)."
+!define MULTIUSER_INNERTEXT_INSTALLMODE_TOP "Alegeți dacă doriți să instalați $(^NameDA) doar pentru dvs. sau pentru toți utilizatorii acestui computer. $(^ClickNext)"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_ALLUSERS "Oricine folosește acest computer (toți utilizatorii)"
+!define MULTIUSER_INNERTEXT_INSTALLMODE_CURRENTUSER "Doar pentru mine"
+!insertmacro MUI_LANGUAGE "Romanian"
 !insertmacro MUI_RESERVEFILE_LANGDLL
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
+
+; Location + portable page strings (DE + EN match the bundled installer languages).
+LangString dirTitle ${LANG_ENGLISH} "Choose location"
+LangString dirInfo ${LANG_ENGLISH} "Select the folder to install ${PRODUCTNAME} into:"
+LangString portableSubtitle ${LANG_ENGLISH} "Where and how to install ${PRODUCTNAME}"
+LangString portableCheck ${LANG_ENGLISH} "Portable Installation"
+LangString portableInfo ${LANG_ENGLISH} "Portable mode skips the Start-menu, registry entries and the uninstaller — the app is simply placed in the folder above. Leave unchecked for a normal installation."
+LangString dirTitle ${LANG_GERMAN} "Speicherort wählen"
+LangString dirInfo ${LANG_GERMAN} "Wählen Sie den Ordner für die Installation von ${PRODUCTNAME}:"
+LangString portableSubtitle ${LANG_GERMAN} "Wohin und wie ${PRODUCTNAME} installiert wird"
+LangString portableCheck ${LANG_GERMAN} "Portable Installation"
+LangString portableInfo ${LANG_GERMAN} "Der portable Modus verzichtet auf Startmenü, Registry-Einträge und den Deinstaller — die App wird einfach im oben gewählten Ordner abgelegt. Für eine normale Installation nicht ankreuzen."
+
+LangString dirTitle ${LANG_SPANISH} "Elegir ubicación"
+LangString dirInfo ${LANG_SPANISH} "Seleccione la carpeta de instalación:"
+LangString portableCheck ${LANG_SPANISH} "Instalación portable"
+LangString portableInfo ${LANG_SPANISH} "El modo portable no crea accesos directos ni entradas de registro: la app solo se coloca en la carpeta elegida."
+LangString dirTitle ${LANG_FRENCH} "Choisir l'emplacement"
+LangString dirInfo ${LANG_FRENCH} "Sélectionnez le dossier d'installation :"
+LangString portableCheck ${LANG_FRENCH} "Installation portable"
+LangString portableInfo ${LANG_FRENCH} "Le mode portable ne crée ni raccourcis ni entrées de registre - l'application est simplement placée dans le dossier choisi."
+LangString dirTitle ${LANG_ITALIAN} "Scegli posizione"
+LangString dirInfo ${LANG_ITALIAN} "Seleziona la cartella di installazione:"
+LangString portableCheck ${LANG_ITALIAN} "Installazione portatile"
+LangString portableInfo ${LANG_ITALIAN} "La modalità portatile non crea collegamenti né voci di registro: l'app viene solo inserita nella cartella scelta."
+LangString dirTitle ${LANG_PORTUGUESEBR} "Escolher local"
+LangString dirInfo ${LANG_PORTUGUESEBR} "Selecione a pasta de instalação:"
+LangString portableCheck ${LANG_PORTUGUESEBR} "Instalação portátil"
+LangString portableInfo ${LANG_PORTUGUESEBR} "O modo portátil não cria atalhos nem entradas de registro - o app é apenas colocado na pasta escolhida."
+LangString dirTitle ${LANG_POLISH} "Wybierz lokalizację"
+LangString dirInfo ${LANG_POLISH} "Wybierz folder instalacji:"
+LangString portableCheck ${LANG_POLISH} "Instalacja przenośna"
+LangString portableInfo ${LANG_POLISH} "Tryb przenośny nie tworzy skrótów ani wpisów rejestru - aplikacja jest tylko umieszczana w wybranym folderze."
+LangString dirTitle ${LANG_RUSSIAN} "Выбор расположения"
+LangString dirInfo ${LANG_RUSSIAN} "Выберите папку установки:"
+LangString portableCheck ${LANG_RUSSIAN} "Портативная установка"
+LangString portableInfo ${LANG_RUSSIAN} "Портативный режим не создаёт ярлыков и записей реестра - приложение просто помещается в выбранную папку."
+LangString dirTitle ${LANG_SIMPCHINESE} "选择位置"
+LangString dirInfo ${LANG_SIMPCHINESE} "选择安装文件夹："
+LangString portableCheck ${LANG_SIMPCHINESE} "便携安装"
+LangString portableInfo ${LANG_SIMPCHINESE} "便携模式不创建快捷方式或注册表项 - 应用只会放入所选文件夹。"
+LangString dirTitle ${LANG_JAPANESE} "場所を選択"
+LangString dirInfo ${LANG_JAPANESE} "インストール先フォルダーを選択:"
+LangString portableCheck ${LANG_JAPANESE} "ポータブルインストール"
+LangString portableInfo ${LANG_JAPANESE} "ポータブルモードはショートカットやレジストリ項目を作成せず、アプリを選択したフォルダーに置くだけです。"
+LangString dirTitle ${LANG_DUTCH} "Locatie kiezen"
+LangString dirInfo ${LANG_DUTCH} "Selecteer de installatiemap:"
+LangString portableCheck ${LANG_DUTCH} "Draagbare installatie"
+LangString portableInfo ${LANG_DUTCH} "De draagbare modus maakt geen snelkoppelingen of registervermeldingen - de app wordt alleen in de gekozen map geplaatst."
+LangString dirTitle ${LANG_TURKISH} "Konum seç"
+LangString dirInfo ${LANG_TURKISH} "Kurulum klasörünü seçin:"
+LangString portableCheck ${LANG_TURKISH} "Taşınabilir kurulum"
+LangString portableInfo ${LANG_TURKISH} "Taşınabilir mod kısayol veya kayıt defteri girdisi oluşturmaz - uygulama yalnızca seçilen klasöre yerleştirilir."
+LangString dirTitle ${LANG_KOREAN} "위치 선택"
+LangString dirInfo ${LANG_KOREAN} "설치 폴더 선택:"
+LangString portableCheck ${LANG_KOREAN} "포터블 설치"
+LangString portableInfo ${LANG_KOREAN} "포터블 모드는 바로 가기나 레지스트리 항목을 만들지 않고 앱을 선택한 폴더에 둡니다."
+LangString dirTitle ${LANG_HINDI} "स्थान चुनें"
+LangString dirInfo ${LANG_HINDI} "इंस्टॉल फ़ोल्डर चुनें:"
+LangString portableCheck ${LANG_HINDI} "पोर्टेबल इंस्टॉलेशन"
+LangString portableInfo ${LANG_HINDI} "पोर्टेबल मोड कोई शॉर्टकट या रजिस्ट्री प्रविष्टि नहीं बनाता - ऐप बस चुने हुए फ़ोल्डर में रखा जाता है।"
+LangString dirTitle ${LANG_INDONESIAN} "Pilih lokasi"
+LangString dirInfo ${LANG_INDONESIAN} "Pilih folder instalasi:"
+LangString portableCheck ${LANG_INDONESIAN} "Instalasi portabel"
+LangString portableInfo ${LANG_INDONESIAN} "Mode portabel tidak membuat pintasan atau entri registri - aplikasi hanya ditempatkan di folder yang dipilih."
+LangString dirTitle ${LANG_VIETNAMESE} "Chọn vị trí"
+LangString dirInfo ${LANG_VIETNAMESE} "Chọn thư mục cài đặt:"
+LangString portableCheck ${LANG_VIETNAMESE} "Cài đặt di động"
+LangString portableInfo ${LANG_VIETNAMESE} "Chế độ di động không tạo lối tắt hay mục registry - ứng dụng chỉ được đặt vào thư mục đã chọn."
+LangString dirTitle ${LANG_CZECH} "Vybrat umístění"
+LangString dirInfo ${LANG_CZECH} "Vyberte instalační složku:"
+LangString portableCheck ${LANG_CZECH} "Přenosná instalace"
+LangString portableInfo ${LANG_CZECH} "Přenosný režim nevytváří zástupce ani záznamy v registru - aplikace se pouze umístí do zvolené složky."
+LangString dirTitle ${LANG_UKRAINIAN} "Вибір розташування"
+LangString dirInfo ${LANG_UKRAINIAN} "Виберіть папку встановлення:"
+LangString portableCheck ${LANG_UKRAINIAN} "Портативне встановлення"
+LangString portableInfo ${LANG_UKRAINIAN} "Портативний режим не створює ярликів і записів реєстру - застосунок лише розміщується у вибраній папці."
+LangString dirTitle ${LANG_SWEDISH} "Välj plats"
+LangString dirInfo ${LANG_SWEDISH} "Välj installationsmapp:"
+LangString portableCheck ${LANG_SWEDISH} "Portabel installation"
+LangString portableInfo ${LANG_SWEDISH} "Portabelt läge skapar inga genvägar eller registerposter - appen placeras bara i den valda mappen."
+LangString dirTitle ${LANG_ROMANIAN} "Alegeți locația"
+LangString dirInfo ${LANG_ROMANIAN} "Selectați folderul de instalare:"
+LangString portableCheck ${LANG_ROMANIAN} "Instalare portabilă"
+LangString portableInfo ${LANG_ROMANIAN} "Modul portabil nu creează scurtături sau intrări de registru - aplicația este doar plasată în folderul ales."
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -673,6 +859,9 @@ Section Install
     WriteRegStr SHCTX "Software\Classes\\{{protocol}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
   {{/each}}
 
+  ; Portable mode: skip every registry write + the uninstaller — leave only the
+  ; copied files in the chosen folder. Standard mode does the full integration.
+  ${If} $PortableMode != 1
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
@@ -715,6 +904,7 @@ Section Install
     WriteRegStr SHCTX "${UNINSTKEY}" "URLUpdateInfo" "${HOMEPAGE}"
     WriteRegStr SHCTX "${UNINSTKEY}" "HelpLink" "${HOMEPAGE}"
   !endif
+  ${EndIf}
 
   ; Create start menu shortcut
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
@@ -877,6 +1067,9 @@ Section Uninstall
     DeleteRegKey /ifempty HKCU "${MANUKEY}"
 
     SetShellVarContext current
+    ; Canonical store (matches DATA_FOLDER in lib.rs); legacy bundle-id dirs kept
+    ; for older installs. A store relocated via the expert menu is not reachable.
+    RmDir /r "$APPDATA\Prompt-Saver"
     RmDir /r "$APPDATA\${BUNDLEID}"
     RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
   ${EndIf}

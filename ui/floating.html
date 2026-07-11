@@ -16,16 +16,13 @@
     <span id="file-error" class="file-error"></span>
   </button>
 
-  <!-- Edge/corner grips to resize the pill (content scales with it). -->
+  <!-- Resize the pill by grabbing its edge. A stadium-shaped RING (rz-catch = the
+       full pill shape, with rz-hole punching out the centre) hugs the rounded
+       outline at ANY size, so the resize hitbox is always right at the edge. The
+       inner hole + the transparent corners stay free for dragging/copying. -->
   <div id="resize" class="resize">
-    <div class="rz rz-n"></div>
-    <div class="rz rz-s"></div>
-    <div class="rz rz-e"></div>
-    <div class="rz rz-w"></div>
-    <div class="rz rz-ne"></div>
-    <div class="rz rz-nw"></div>
-    <div class="rz rz-se"></div>
-    <div class="rz rz-sw"></div>
+    <div id="rz-catch" class="rz-catch"></div>
+    <div id="rz-hole" class="rz-hole"></div>
   </div>
 
   <!-- Right-click menu: size presets, edit prompt, remove pill -->

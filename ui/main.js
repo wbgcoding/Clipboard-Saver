@@ -304,9 +304,21 @@ function hideToast() {
 
 // Optional action: { label, onClick } adds a button and keeps the toast longer.
 function toast(msg, action = null) {
-  toastEl.textContent = msg;
   toastEl.classList.toggle("actionable", !!action);
+  toastEl.classList.toggle("update", !!(action && action.variant === "update"));
   if (action) {
+    // Richer layout: optional icon badge + message + action button.
+    toastEl.textContent = "";
+    if (action.icon) {
+      const ico = document.createElement("span");
+      ico.className = "toast-ico";
+      ico.innerHTML = action.icon; // static, developer-controlled SVG
+      toastEl.appendChild(ico);
+    }
+    const label = document.createElement("span");
+    label.className = "toast-msg";
+    label.textContent = msg;
+    toastEl.appendChild(label);
     const btn = document.createElement("button");
     btn.className = "toast-btn";
     btn.textContent = action.label;
@@ -315,6 +327,8 @@ function toast(msg, action = null) {
       action.onClick();
     });
     toastEl.appendChild(btn);
+  } else {
+    toastEl.textContent = msg;
   }
   toastEl.classList.remove("hidden");
   void toastEl.offsetWidth;
@@ -4297,8 +4311,12 @@ function bind() {
   });
   listen("update-available", (e) => {
     offerUpdate(e.payload);
+    const icon =
+      '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>';
     toast(t("updateAvailable").replace("{v}", e.payload.version), {
       label: t("installNow"),
+      variant: "update",
+      icon,
       onClick: () => openUpdateModal(e.payload),
     });
   });

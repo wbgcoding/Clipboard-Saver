@@ -18,6 +18,7 @@ A tiny, fully offline Windows tool for storing your favorite prompts and copying
 - **Floating buttons** – pin any prompt as a frameless, transparent, always-on-top pill; click to copy from anywhere, drag to reposition, right-click for size / edit / remove; positions survive restarts
 - **Images, GIFs & videos** – save a picture from the clipboard or a file and paste it anywhere with one click; attach any file by path; give any prompt a media icon and an optional caption
 - **Video player** – looping previews on tiles **and** floating buttons with play/pause, scrubber, loop toggle and a volume slider; volume, mute and loop are remembered per prompt
+- **Full-screen media viewer** – click any preview image or video in a dialog to open it full-screen: scroll to zoom in (up to 8×), drag to pan, close with ✕ or Escape
 - **Per-prompt colors** – tint tiles and floating pills from a palette or a custom color picker (frames media)
 - **Auto-fit text** – tile text grows to fill the button (or pick a fixed size and one of 20 fonts, per prompt if you like)
 - **20 languages** – auto-detected from the system (EN fallback): EN, DE, ES, FR, IT, PT, PL, RU, ZH, JA, NL, TR, KO, HI, ID, VI, CS, UK, SV, RO

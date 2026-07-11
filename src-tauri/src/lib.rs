@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -35,6 +35,37 @@ fn show_main(app: &AppHandle) {
         let _ = win.unminimize();
         let _ = win.set_focus();
     }
+}
+
+// Global-hotkey action: bring the window forward and tell the UI to open the
+// quick-launcher (the prompt library with its search focused).
+fn summon_launcher(app: &AppHandle) {
+    show_main(app);
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.emit("summon-launcher", ());
+    }
+}
+
+// Register a new global hotkey (empty = disable). Returns an error the UI can
+// show if the accelerator is invalid or already taken by another app.
+#[tauri::command]
+fn set_hotkey(app: AppHandle, state: State<Db>, hotkey: String) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    let hk = hotkey.trim().to_string();
+    let result = if hk.is_empty() {
+        Ok(())
+    } else {
+        match hk.parse::<Shortcut>() {
+            Ok(sc) => gs.register(sc).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    };
+    let mut store = lock(&state);
+    store.settings.hotkey = if result.is_ok() { hk } else { String::new() };
+    save_settings(&app, &store.settings);
+    result
 }
 
 // ---------- Data model ----------
@@ -73,6 +104,9 @@ struct Prompt {
     font: String,
     #[serde(default)]
     font_size: u32,
+    // Marked as a favorite (starred) in the library.
+    #[serde(default)]
+    favorite: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -139,6 +173,9 @@ struct Settings {
     // Keep the main window above all other windows (except while minimized).
     #[serde(default)]
     always_on_top: bool,
+    // Global hotkey accelerator (e.g. "CommandOrControl+Shift+P"); empty = off.
+    #[serde(default)]
+    hotkey: String,
     #[serde(default = "default_on")]
     auto_update: bool,
     // Update versions the user chose to skip — never offered again.
@@ -154,11 +191,17 @@ struct Settings {
     // Expert string options (e.g. copy-feedback font). Missing key = default.
     #[serde(default)]
     ui_texts: HashMap<String, String>,
-    // Recently copied prompts (most recent first, with timestamp) + copy counts.
-    #[serde(default)]
+    // Legacy in-blob copy history. Read once on upgrade to migrate into the
+    // dedicated `copy_log` table, then never written back (the table owns it so
+    // a million-entry history never bloats this encrypted settings blob).
+    #[serde(default, skip_serializing)]
     copy_log: Vec<CopyEntry>,
+    // Per-prompt copy count + last-used time (unix seconds). Both bounded by the
+    // number of prompts, so they stay small in the blob.
     #[serde(default)]
     usage: HashMap<String, u32>,
+    #[serde(default)]
+    last_used: HashMap<String, u64>,
     #[serde(default = "default_on")]
     show_header: bool,
     #[serde(default = "default_on")]
@@ -217,6 +260,7 @@ impl Default for Settings {
             autostart: false,
             start_minimized: false,
             always_on_top: false,
+            hotkey: String::new(),
             auto_update: true,
             skipped_versions: Vec::new(),
             ui_flags: HashMap::new(),
@@ -224,6 +268,7 @@ impl Default for Settings {
             ui_texts: HashMap::new(),
             copy_log: Vec::new(),
             usage: HashMap::new(),
+            last_used: HashMap::new(),
             show_header: true,
             show_composer: true,
             language: default_language(),
@@ -242,12 +287,15 @@ const GRID_MIN: u32 = 1;
 // Hard safety ceilings. The default-facing limits are 20 (enforced in the UI via
 // the expert values gridMax / maxViews); these only cap how far those expert
 // overrides can be pushed, so old data and extreme settings can't break things.
-const GRID_MAX: u32 = 100;
-const MAX_VIEWS: usize = 100;
+const GRID_MAX: u32 = 200;
+const MAX_VIEWS: usize = 200;
 const FLOAT_W: f64 = 360.0;
 const FLOAT_H: f64 = 80.0; // flat pill shape, clearly wider than tall
 const FLOAT_IMG: f64 = 400.0; // square box for image pills: S 300 / M 400 / L 560
 const AUTOSTART_KEY: &str = "PromptSaver";
+// Local data folder under %APPDATA%\Roaming. Used by the pre-app panic hook
+// (no AppHandle) and the store path; deliberately NOT the bundle identifier.
+const DATA_FOLDER: &str = "Prompt-Saver";
 
 fn grid_key(cols: u32, rows: u32) -> String {
     format!("{}x{}", cols, rows)
@@ -381,7 +429,9 @@ impl Settings {
             });
         }
         if !self.views.iter().any(|v| v.id == self.active_view) {
-            self.active_view = self.views[0].id.clone();
+            if let Some(first) = self.views.first() {
+                self.active_view = first.id.clone();
+            }
         }
     }
 
@@ -408,14 +458,94 @@ type Db = Mutex<Store>;
 
 // ---------- Paths + persistence ----------
 
-fn data_dir(app: &AppHandle) -> PathBuf {
-    // Never panic: fall back to a temp dir if the platform path is unavailable.
-    let dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("prompt-saver"));
+fn default_data_dir(app: &AppHandle) -> PathBuf {
+    // Portable build keeps its data beside the exe so it travels with the folder;
+    // installed builds use %APPDATA%\Prompt-Saver. If the exe folder is not
+    // writable (e.g. run from a read-only location), fall back to AppData.
+    if is_portable() {
+        if let Some(dir) = portable_data_dir() {
+            if fs::create_dir_all(&dir).is_ok() {
+                migrate_appdata_data(app, &dir);
+                return dir;
+            }
+        }
+    }
+    let dir = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|p| p.join(DATA_FOLDER))
+        .or_else(|| app.path().app_data_dir().ok())
+        .unwrap_or_else(|| std::env::temp_dir().join(DATA_FOLDER));
     let _ = fs::create_dir_all(&dir);
+    migrate_legacy_data(app, &dir);
     dir
+}
+
+// Portable data lives directly beside the exe (no sub-folder) so a single
+// portable download stays self-contained and the store travels with it.
+fn portable_data_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(|d| d.to_path_buf())
+}
+
+// First portable launch after an AppData install: copy the store beside the exe
+// once (non-destructive — the AppData copy stays as a backup) so no data is lost.
+fn migrate_appdata_data(app: &AppHandle, portable: &std::path::Path) {
+    if portable.join("data.db").exists() {
+        return;
+    }
+    let src = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|p| p.join(DATA_FOLDER))
+        .or_else(|| app.path().app_data_dir().ok());
+    if let Some(src) = src {
+        if src.as_path() != portable {
+            for f in ["data.db", "prompts.json", "settings.json"] {
+                if src.join(f).exists() {
+                    let _ = fs::copy(src.join(f), portable.join(f));
+                }
+            }
+        }
+    }
+}
+
+// One-time move of the store from the old identifier-based folder
+// (com.bgcoding.promptsaver) to Prompt-Saver, so the rename never loses data.
+fn migrate_legacy_data(app: &AppHandle, new: &std::path::Path) {
+    if new.join("data.db").exists() {
+        return;
+    }
+    if let Ok(old) = app.path().app_data_dir() {
+        if old.as_path() != new {
+            for f in ["data.db", "prompts.json", "settings.json"] {
+                if old.join(f).exists() {
+                    let _ = fs::copy(old.join(f), new.join(f));
+                }
+            }
+        }
+    }
+}
+
+// Portable build = run without the installer's uninstall.exe beside the exe
+// (standard installs write one; portable mode and dev runs do not). Portable
+// always fully closes on window-close; installed honours the tray setting.
+fn is_portable() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| !d.join("uninstall.exe").exists()))
+        .unwrap_or(true)
+}
+
+// Effective store location. A "datapath" pointer file in the canonical dir can
+// redirect the store to a user-chosen folder (expert menu); on anything missing
+// or invalid it falls back to the canonical dir, so data is never lost.
+fn data_dir(app: &AppHandle) -> PathBuf {
+    let base = default_data_dir(app);
+    if let Ok(s) = fs::read_to_string(base.join("datapath")) {
+        let p = PathBuf::from(s.trim());
+        if !s.trim().is_empty() && p.is_dir() {
+            return p;
+        }
+    }
+    base
 }
 
 fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &PathBuf) -> T {
@@ -440,12 +570,89 @@ fn write_json<T: Serialize>(path: &PathBuf, data: &T) {
 // is the source of truth; the legacy JSON files are imported once on upgrade
 // and otherwise only used as a fallback if the DB cannot be opened.
 
+// At-rest encryption for the local store. DPAPI (Windows, per-user, no password): the
+// same Windows account always decrypts; copied elsewhere it can't be read. Falls back to
+// plaintext if DPAPI is unavailable so data is never lost; legacy plaintext rows are
+// re-encrypted on the next save (see load_store).
+const ENC_PREFIX: &str = "enc:v1:";
+
+#[cfg(windows)]
+mod store_crypt {
+    use std::ffi::c_void;
+    #[repr(C)]
+    struct Blob {
+        cb: u32,
+        pb: *mut u8,
+    }
+    #[link(name = "crypt32")]
+    extern "system" {
+        fn CryptProtectData(d: *const Blob, desc: *const u16, ent: *const Blob, res: *mut c_void, prompt: *mut c_void, flags: u32, out: *mut Blob) -> i32;
+        fn CryptUnprotectData(d: *const Blob, desc: *mut *mut u16, ent: *const Blob, res: *mut c_void, prompt: *mut c_void, flags: u32, out: *mut Blob) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LocalFree(h: *mut c_void) -> *mut c_void;
+    }
+    const UI_FORBIDDEN: u32 = 0x1;
+
+    fn run(input: &[u8], protect: bool) -> Option<Vec<u8>> {
+        unsafe {
+            let in_blob = Blob { cb: input.len() as u32, pb: input.as_ptr() as *mut u8 };
+            let mut out = Blob { cb: 0, pb: std::ptr::null_mut() };
+            let ok = if protect {
+                CryptProtectData(&in_blob, std::ptr::null(), std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut(), UI_FORBIDDEN, &mut out)
+            } else {
+                CryptUnprotectData(&in_blob, std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut(), UI_FORBIDDEN, &mut out)
+            };
+            if ok == 0 || out.pb.is_null() {
+                return None;
+            }
+            let v = std::slice::from_raw_parts(out.pb, out.cb as usize).to_vec();
+            LocalFree(out.pb as *mut c_void);
+            Some(v)
+        }
+    }
+    pub fn protect(d: &[u8]) -> Option<Vec<u8>> { run(d, true) }
+    pub fn unprotect(d: &[u8]) -> Option<Vec<u8>> { run(d, false) }
+}
+
+// Encrypt a JSON string for storage (prefix + base64 ciphertext); plaintext on failure.
+fn enc_str(plain: &str) -> String {
+    #[cfg(windows)]
+    if let Some(ct) = store_crypt::protect(plain.as_bytes()) {
+        return format!("{}{}", ENC_PREFIX, base64_encode(&ct));
+    }
+    plain.to_string()
+}
+
+// Decrypt a stored value. Legacy (un-prefixed) values pass through for migration; an
+// undecryptable prefixed value (e.g. another Windows account) yields "" so the row is
+// skipped rather than fed garbage to the JSON parser.
+fn dec_str(stored: &str) -> String {
+    #[cfg(windows)]
+    if let Some(b64) = stored.strip_prefix(ENC_PREFIX) {
+        let ct = base64_decode(b64);
+        if !ct.is_empty() {
+            if let Some(pt) = store_crypt::unprotect(&ct) {
+                if let Ok(s) = String::from_utf8(pt) {
+                    return s;
+                }
+            }
+        }
+        return String::new();
+    }
+    stored.to_string()
+}
+
 fn db_conn(app: &AppHandle) -> Option<Connection> {
     let conn = Connection::open(data_dir(app).join("data.db")).ok()?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
+         PRAGMA busy_timeout=3000;
          CREATE TABLE IF NOT EXISTS prompts(id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS copy_log(ts INTEGER NOT NULL, id TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS idx_copy_log_ts ON copy_log(ts);",
     )
     .ok()?;
     Some(conn)
@@ -457,7 +664,7 @@ fn db_write_prompts(conn: &mut Connection, prompts: &[Prompt]) -> rusqlite::Resu
     {
         let mut stmt = tx.prepare("INSERT INTO prompts(id, ord, data) VALUES(?1, ?2, ?3)")?;
         for (i, p) in prompts.iter().enumerate() {
-            let data = serde_json::to_string(p).unwrap_or_default();
+            let data = enc_str(&serde_json::to_string(p).unwrap_or_default());
             stmt.execute(params![p.id, i as i64, data])?;
         }
     }
@@ -465,7 +672,7 @@ fn db_write_prompts(conn: &mut Connection, prompts: &[Prompt]) -> rusqlite::Resu
 }
 
 fn db_write_settings(conn: &Connection, settings: &Settings) -> rusqlite::Result<()> {
-    let json = serde_json::to_string(settings).unwrap_or_default();
+    let json = enc_str(&serde_json::to_string(settings).unwrap_or_default());
     conn.execute(
         "INSERT INTO meta(key, value) VALUES('settings', ?1)
          ON CONFLICT(key) DO UPDATE SET value = ?1",
@@ -474,24 +681,79 @@ fn db_write_settings(conn: &Connection, settings: &Settings) -> rusqlite::Result
     Ok(())
 }
 
-fn db_load(conn: &Connection) -> (Vec<Prompt>, Option<Settings>) {
+fn db_load(conn: &Connection) -> (Vec<Prompt>, Option<Settings>, bool) {
     let mut prompts = Vec::new();
+    let mut plaintext = false; // any legacy unencrypted row → re-save once to encrypt
     if let Ok(mut stmt) = conn.prepare("SELECT data FROM prompts ORDER BY ord") {
         if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) {
             for data in rows.flatten() {
-                if let Ok(p) = serde_json::from_str::<Prompt>(&data) {
+                if !data.starts_with(ENC_PREFIX) {
+                    plaintext = true;
+                }
+                if let Ok(p) = serde_json::from_str::<Prompt>(&dec_str(&data)) {
                     prompts.push(p);
                 }
             }
         }
     }
-    let settings = conn
+    let raw = conn
         .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| {
             r.get::<_, String>(0)
         })
-        .ok()
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok());
-    (prompts, settings)
+        .ok();
+    if raw.as_deref().is_some_and(|v| !v.starts_with(ENC_PREFIX)) {
+        plaintext = true;
+    }
+    let settings = raw.and_then(|s| serde_json::from_str::<Settings>(&dec_str(&s)).ok());
+    (prompts, settings, plaintext)
+}
+
+// Append one copy event, then trim to the cap and the retention window. The cap
+// trim uses the rowid (monotonic insertion order): "keep rows whose rowid is
+// within `cap` of the newest" deletes at most one row per call in steady state
+// and touches nothing during growth — O(log n), so a million-entry history is
+// still cheap on every copy.
+// Trim the history to the cap (newest `cap` rows) and the retention window. Rows
+// kept are exactly those with rowid in (MAX-cap, MAX], i.e. at most `cap`, and
+// age-prune only ever deletes from the old (low-rowid) end, so the kept block
+// stays a contiguous newest-N — the cap can never be exceeded.
+fn db_trim_copy(conn: &Connection, cap: usize, cutoff: Option<u64>) -> rusqlite::Result<()> {
+    if cap == 0 {
+        conn.execute("DELETE FROM copy_log", [])?;
+        return Ok(());
+    }
+    conn.execute(
+        "DELETE FROM copy_log WHERE rowid <= (SELECT MAX(rowid) FROM copy_log) - ?1",
+        params![cap as i64],
+    )?;
+    if let Some(c) = cutoff {
+        conn.execute("DELETE FROM copy_log WHERE ts > 0 AND ts < ?1", params![c as i64])?;
+    }
+    Ok(())
+}
+
+fn db_append_copy(conn: &Connection, entry: &CopyEntry, cap: usize, cutoff: Option<u64>) -> rusqlite::Result<()> {
+    conn.execute("INSERT INTO copy_log(ts, id) VALUES(?1, ?2)", params![entry.ts as i64, entry.id])?;
+    db_trim_copy(conn, cap, cutoff)
+}
+
+// Newest copy events for the journal. grouped = one row per prompt (its most
+// recent copy); otherwise every event. Capped so the UI never renders millions.
+fn db_recent_copies(conn: &Connection, limit: usize, grouped: bool) -> Vec<CopyEntry> {
+    let sql = if grouped {
+        "SELECT id, MAX(ts) FROM copy_log GROUP BY id ORDER BY MAX(rowid) DESC LIMIT ?1"
+    } else {
+        "SELECT id, ts FROM copy_log ORDER BY rowid DESC LIMIT ?1"
+    };
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(sql) {
+        if let Ok(rows) = stmt.query_map(params![limit as i64], |r| {
+            Ok(CopyEntry { id: r.get::<_, String>(0)?, ts: r.get::<_, i64>(1)? as u64 })
+        }) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
 }
 
 fn save_prompts(app: &AppHandle, store: &Store) {
@@ -523,8 +785,8 @@ fn migrate_prompts(prompts: &mut [Prompt]) {
 
 fn load_store(app: &AppHandle) -> Store {
     let dir = data_dir(app);
-    if let Some(conn) = db_conn(app) {
-        let (mut prompts, settings_opt) = db_load(&conn);
+    if let Some(mut conn) = db_conn(app) {
+        let (mut prompts, settings_opt, needs_mig) = db_load(&conn);
         let mut settings = settings_opt.clone().unwrap_or_default();
         // Empty DB but legacy JSON present → import it once, then own the data.
         if prompts.is_empty() && settings_opt.is_none() {
@@ -546,9 +808,64 @@ fn load_store(app: &AppHandle) -> Store {
             settings = j_settings;
         }
         settings.migrate();
-        prune_history(&mut settings);
+        // One-time: move any legacy in-blob copy history into the copy_log table.
+        // Gated on a persistent `meta` marker (written in the same transaction as
+        // the rows) so a failed post-migration resave can never re-import and
+        // duplicate the history on the next launch.
+        let already_migrated = conn
+            .query_row("SELECT 1 FROM meta WHERE key='copy_log_migrated'", [], |_| Ok(()))
+            .is_ok();
+        let mut migrated_log = false;
+        if !already_migrated {
+            if !settings.copy_log.is_empty() {
+                if let Ok(tx) = conn.transaction() {
+                    {
+                        // copy_log is newest-first: insert oldest-first so rowid order
+                        // stays chronological; backfill last_used with each id's newest ts.
+                        if let Ok(mut stmt) = tx.prepare("INSERT INTO copy_log(ts, id) VALUES(?1, ?2)") {
+                            for e in settings.copy_log.iter().rev() {
+                                let _ = stmt.execute(params![e.ts as i64, e.id]);
+                                if e.ts > 0 {
+                                    settings.last_used.insert(e.id.clone(), e.ts);
+                                }
+                            }
+                        }
+                        let _ = tx.execute(
+                            "INSERT OR REPLACE INTO meta(key, value) VALUES('copy_log_migrated', '1')",
+                            [],
+                        );
+                    }
+                    if tx.commit().is_ok() {
+                        migrated_log = true;
+                    }
+                }
+            } else {
+                // No legacy history to move — mark done so we never re-check.
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES('copy_log_migrated', '1')",
+                    [],
+                );
+            }
+            settings.copy_log.clear();
+        }
+        // Enforce the cap + retention window on the table at startup (e.g. after
+        // the cap was lowered, or right after a large legacy import).
+        let cap = settings
+            .ui_values
+            .get("historyMax")
+            .copied()
+            .unwrap_or(100.0)
+            .clamp(0.0, COPY_HISTORY_MAX as f64) as usize;
+        let cutoff = history_max_age(&settings).map(|age| now_secs().saturating_sub(age));
+        let _ = db_trim_copy(&conn, cap, cutoff);
         migrate_prompts(&mut prompts);
-        return Store { prompts, settings };
+        let store = Store { prompts, settings };
+        if needs_mig || migrated_log {
+            // One-time: re-encrypt legacy plaintext rows / drop the migrated log from the blob.
+            save_prompts(app, &store);
+            save_settings(app, &store.settings);
+        }
+        return store;
     }
     // Fallback: DB unavailable → read the JSON files directly.
     let mut settings: Settings = read_json(&dir.join("settings.json"));
@@ -560,11 +877,15 @@ fn load_store(app: &AppHandle) -> Store {
 }
 
 fn gen_id() -> String {
+    // nanos give cross-restart uniqueness; the per-process counter prevents
+    // collisions when many ids are minted in the same tick (e.g. bulk import).
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    format!("p{}", nanos)
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("p{}_{}", nanos, seq)
 }
 
 fn lock<'a>(state: &'a State<'a, Db>) -> std::sync::MutexGuard<'a, Store> {
@@ -682,13 +1003,14 @@ fn open_floating(app: &AppHandle, prompt: &Prompt) {
     }
 
     // Never call Tauri window APIs while holding the Db lock (deadlock risk).
-    let (saved, scale, count) = {
+    let (saved, scale, count, excluded) = {
         let state: State<Db> = app.state();
         let store = lock(&state);
         (
             store.settings.floating.get(&prompt.id).copied(),
             float_scale_of(&store.settings, &prompt.id),
             store.settings.floating.len(),
+            capture_excluded(&store.settings),
         )
     };
     let pos = saved.unwrap_or_else(|| default_pos(app, count));
@@ -715,6 +1037,7 @@ fn open_floating(app: &AppHandle, prompt: &Prompt) {
         // Transparent native backdrop: resizing never flashes a white/opaque
         // rectangle behind the rounded pill (mirrors apply_window_bg for main).
         let _ = win.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        set_capture_exclusion(&win, excluded);
         let _ = win.set_position(PhysicalPosition::new(pos.x, pos.y));
         let _ = win.show();
 
@@ -787,13 +1110,34 @@ fn base64_decode(s: &str) -> Vec<u8> {
     out
 }
 
+// Cap decode dimensions so a malformed or decompression-bomb image fails
+// gracefully (None) instead of OOM-crashing the app. Generous enough for any
+// real photo or screenshot; image's default 512 MiB alloc cap still applies.
+const MAX_DECODE_DIM: u32 = 30_000;
+
+fn decode_image<R: std::io::BufRead + std::io::Seek>(reader: image::ImageReader<R>) -> Option<image::DynamicImage> {
+    let mut reader = reader.with_guessed_format().ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIM);
+    limits.max_image_height = Some(MAX_DECODE_DIM);
+    reader.limits(limits);
+    reader.decode().ok()
+}
+
+fn decode_image_mem(bytes: &[u8]) -> Option<image::DynamicImage> {
+    decode_image(image::ImageReader::new(std::io::Cursor::new(bytes)))
+}
+
+fn decode_image_file(path: &str) -> Option<image::DynamicImage> {
+    decode_image(image::ImageReader::open(path).ok()?)
+}
+
 fn copy_image_to_clipboard(data_url: &str) -> bool {
-    let b64 = data_url.trim_start_matches("data:image/png;base64,");
-    let bytes = base64_decode(b64);
+    let bytes = data_url_bytes(data_url);
     if bytes.is_empty() { return false; }
-    let img = match image::load_from_memory(&bytes) {
-        Ok(img) => img.to_rgba8(),
-        Err(_) => return false,
+    let img = match decode_image_mem(&bytes) {
+        Some(img) => img.to_rgba8(),
+        None => return false,
     };
     let (w, h) = img.dimensions();
     let img_data = arboard::ImageData {
@@ -886,7 +1230,7 @@ async fn pick_file_path(app: AppHandle) -> Option<String> {
 // Preview for an attached file that happens to be an image.
 #[tauri::command]
 async fn load_image_file(path: String) -> Option<String> {
-    let img = image::open(&path).ok()?;
+    let img = decode_image_file(&path)?;
     let result = scale_and_encode(img);
     if result.is_empty() { None } else { Some(result) }
 }
@@ -929,12 +1273,20 @@ async fn pdf_preview(app: AppHandle, path: String) -> Option<String> {
 // IDs of prompts whose attached file OR media icon is gone (polled by the UI).
 #[tauri::command]
 fn missing_files(state: State<Db>) -> Vec<String> {
+    // Snapshot ids + paths under the lock, then stat OUTSIDE it: a slow or dead
+    // drive must never block other DB operations behind this polled command.
+    let entries: Vec<(String, String, String)> = {
+        let g = lock(&state);
+        g.prompts
+            .iter()
+            .map(|p| (p.id.clone(), p.file_path.clone(), p.icon_path.clone()))
+            .collect()
+    };
     let gone = |path: &str| !path.is_empty() && !std::path::Path::new(path).exists();
-    lock(&state)
-        .prompts
-        .iter()
-        .filter(|p| gone(&p.file_path) || gone(&p.icon_path))
-        .map(|p| p.id.clone())
+    entries
+        .into_iter()
+        .filter(|(_, fp, ip)| gone(fp) || gone(ip))
+        .map(|(id, _, _)| id)
         .collect()
 }
 
@@ -962,6 +1314,66 @@ fn first_free_cell(view: &View) -> Option<[u32; 2]> {
     None
 }
 
+// "Store files" opt-in flag (off by default).
+fn store_files_enabled(store: &Store) -> bool {
+    store.settings.ui_flags.get("storeFiles").copied().unwrap_or(false)
+}
+
+// Copy an attached file into <data>/files so the prompt keeps working even if the
+// original is moved or deleted. Returns the stored path, or the original unchanged
+// on any problem or if it is already inside the store (never loses the reference).
+fn store_attached_file(app: &AppHandle, path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+    let src = std::path::Path::new(path);
+    let files_dir = data_dir(app).join("files");
+    if src.starts_with(&files_dir) || !src.is_file() {
+        return path.to_string();
+    }
+    if fs::create_dir_all(&files_dir).is_err() {
+        return path.to_string();
+    }
+    let name = src
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let dest = files_dir.join(format!("{}_{}", gen_id(), name));
+    match fs::copy(src, &dest) {
+        Ok(_) => dest.to_string_lossy().to_string(),
+        Err(_) => path.to_string(),
+    }
+}
+
+// Remove copies in <data>/files that no prompt references any more. Gated by the
+// cleanupFiles flag (default on); only ever touches files inside our own store
+// folder, so a user's originals elsewhere are never affected.
+fn cleanup_orphan_files(app: &AppHandle, store: &Store) {
+    if !store.settings.ui_flags.get("cleanupFiles").copied().unwrap_or(true) {
+        return;
+    }
+    let entries = match fs::read_dir(data_dir(app).join("files")) {
+        Ok(e) => e,
+        Err(_) => return, // no store folder yet -> nothing to clean
+    };
+    // Compare case-insensitively with normalized separators (Windows) so a still
+    // referenced file is never mistaken for an orphan and deleted.
+    let norm = |s: &str| s.replace('/', "\\").to_lowercase();
+    let referenced: std::collections::HashSet<String> = store
+        .prompts
+        .iter()
+        .flat_map(|p| [p.file_path.clone(), p.icon_path.clone()])
+        .filter(|s| !s.is_empty())
+        .map(|s| norm(&s))
+        .collect();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && !referenced.contains(&norm(&path.to_string_lossy())) {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
 // Async: persisting all prompts (base64 images) to SQLite must not block the UI
 // thread — a sync command runs on it and froze the window while saving.
 #[tauri::command]
@@ -980,24 +1392,34 @@ async fn add_prompt(
     caption_size: Option<u32>,
     font: Option<String>,
     font_size: Option<u32>,
+    favorite: Option<bool>,
 ) -> Result<Prompt, String> {
-    let prompt = Prompt {
-        id: gen_id(),
-        name,
-        text,
-        color,
-        image: image.unwrap_or_default(),
-        show_image: show_image.unwrap_or(false),
-        copy_image: copy_image.unwrap_or(false),
-        file_path: file_path.unwrap_or_default(),
-        icon_path: icon_path.unwrap_or_default(),
-        caption: caption.unwrap_or_default(),
-        caption_size: clamp_caption_size(caption_size.unwrap_or(0)),
-        font: font.unwrap_or_default(),
-        font_size: clamp_font_size(font_size.unwrap_or(0)),
-    };
-    {
+    // One lock for the whole op so the storeFiles flag can't change mid-insert.
+    let prompt = {
         let mut store = lock(&state);
+        let store_files = store_files_enabled(&store);
+        let mut fp = file_path.unwrap_or_default();
+        let mut ip = icon_path.unwrap_or_default();
+        if store_files {
+            fp = store_attached_file(&app, &fp);
+            ip = store_attached_file(&app, &ip);
+        }
+        let prompt = Prompt {
+            id: gen_id(),
+            name,
+            text,
+            color,
+            image: image.unwrap_or_default(),
+            show_image: show_image.unwrap_or(false),
+            copy_image: copy_image.unwrap_or(false),
+            file_path: fp,
+            icon_path: ip,
+            caption: caption.unwrap_or_default(),
+            caption_size: clamp_caption_size(caption_size.unwrap_or(0)),
+            font: font.unwrap_or_default(),
+            font_size: clamp_font_size(font_size.unwrap_or(0)),
+            favorite: favorite.unwrap_or(false),
+        };
         let view = store.settings.active_view_mut();
         if let Some(cell) = first_free_cell(view) {
             let key = grid_key(view.cols, view.rows);
@@ -1006,7 +1428,8 @@ async fn add_prompt(
         store.prompts.push(prompt.clone());
         save_prompts(&app, &store);
         save_settings(&app, &store.settings);
-    }
+        prompt
+    };
     Ok(prompt)
 }
 
@@ -1028,9 +1451,13 @@ async fn update_prompt(
     caption_size: Option<u32>,
     font: Option<String>,
     font_size: Option<u32>,
+    favorite: Option<bool>,
 ) -> Result<Option<Prompt>, String> {
     let updated = {
         let mut store = lock(&state);
+        let store_files = store_files_enabled(&store);
+        let file_path = file_path.map(|p| if store_files { store_attached_file(&app, &p) } else { p });
+        let icon_path = icon_path.map(|p| if store_files { store_attached_file(&app, &p) } else { p });
         let found = store.prompts.iter_mut().find(|p| p.id == id);
         match found {
             Some(p) => {
@@ -1048,8 +1475,10 @@ async fn update_prompt(
                 if let Some(fs) = font_size {
                     p.font_size = clamp_font_size(fs);
                 }
+                if let Some(fav) = favorite { p.favorite = fav; }
                 let clone = p.clone();
                 save_prompts(&app, &store);
+                cleanup_orphan_files(&app, &store); // a replaced attachment orphans its old copy
                 let scale = float_scale_of(&store.settings, &id);
                 Some((clone, scale))
             }
@@ -1069,6 +1498,16 @@ async fn update_prompt(
         }
     }
     Ok(updated)
+}
+
+// Star / unstar a prompt in the library.
+#[tauri::command]
+fn set_favorite(app: AppHandle, state: State<Db>, id: String, favorite: bool) {
+    let mut store = lock(&state);
+    if let Some(p) = store.prompts.iter_mut().find(|p| p.id == id) {
+        p.favorite = favorite;
+        save_prompts(&app, &store);
+    }
 }
 
 // Async: keeps the prompt-table rewrite off the UI thread.
@@ -1091,6 +1530,7 @@ async fn delete_prompt(app: AppHandle, state: State<'_, Db>, id: String) -> Resu
         if changed {
             save_prompts(&app, &store);
             save_settings(&app, &store.settings);
+            cleanup_orphan_files(&app, &store); // drop the deleted prompt's stored copies
         }
         changed
     };
@@ -1297,6 +1737,40 @@ fn set_view_color(app: AppHandle, state: State<Db>, id: String, color: String) -
     store.settings.clone()
 }
 
+// Recolor saved data when the global palette changes: every prompt/view whose
+// color equals an old palette hex is moved to the new one (pairs = [[old,new],...]).
+#[tauri::command]
+fn remap_colors(app: AppHandle, state: State<Db>, pairs: Vec<(String, String)>) {
+    if pairs.is_empty() {
+        return;
+    }
+    let map: HashMap<String, String> = pairs.into_iter().filter(|(o, n)| o != n).collect();
+    if map.is_empty() {
+        return;
+    }
+    let mut store = lock(&state);
+    let mut prompts_changed = false;
+    for p in &mut store.prompts {
+        if let Some(nc) = map.get(&p.color) {
+            p.color = nc.clone();
+            prompts_changed = true;
+        }
+    }
+    let mut views_changed = false;
+    for v in &mut store.settings.views {
+        if let Some(nc) = map.get(&v.color) {
+            v.color = nc.clone();
+            views_changed = true;
+        }
+    }
+    if prompts_changed {
+        save_prompts(&app, &store);
+    }
+    if views_changed {
+        save_settings(&app, &store.settings);
+    }
+}
+
 #[tauri::command]
 fn delete_view(app: AppHandle, state: State<Db>, id: String) -> Result<Settings, String> {
     let mut store = lock(&state);
@@ -1390,9 +1864,10 @@ async fn copy_text(text: String) -> bool {
         .is_ok()
 }
 
-// Hard ceiling for the copy-history length; the live limit is the expert value
-// historyMax (default 50).
-const COPY_HISTORY_MAX: usize = 200;
+// Safety ceiling for the copy-history length; the live limit is the expert value
+// historyMax (default 100, up to this ceiling). The history lives in its own
+// table with O(log n) append/trim, so even the ceiling stays fast on every copy.
+const COPY_HISTORY_MAX: usize = 1_000_000;
 
 // One copy-history entry: which prompt + when (unix seconds).
 #[derive(Serialize, Deserialize, Clone)]
@@ -1430,47 +1905,67 @@ fn prune_history(settings: &mut Settings) {
 // Record a copy in the history + usage stats (called by the UI after any copy).
 #[tauri::command]
 async fn record_copy(app: AppHandle, state: State<'_, Db>, id: String) -> Result<(), String> {
-    let mut store = lock(&state);
-    // Respect the privacy toggle (expert menu): off = don't track.
-    if store.settings.ui_flags.get("copyHistory") == Some(&false) {
-        return Ok(());
-    }
-    if !store.prompts.iter().any(|p| p.id == id) {
-        return Ok(());
-    }
-    *store.settings.usage.entry(id.clone()).or_insert(0) += 1;
-    // Timestamp storage is a privacy toggle (default on).
-    let ts = if store.settings.ui_flags.get("historyTimestamps") == Some(&false) {
-        0
-    } else {
-        now_secs()
+    let (entry, cap, cutoff) = {
+        let mut store = lock(&state);
+        // Respect the privacy toggle (expert menu): off = don't track.
+        if store.settings.ui_flags.get("copyHistory") == Some(&false) {
+            return Ok(());
+        }
+        if !store.prompts.iter().any(|p| p.id == id) {
+            return Ok(());
+        }
+        *store.settings.usage.entry(id.clone()).or_insert(0) += 1;
+        // Timestamp storage is a privacy toggle (default on).
+        let ts = if store.settings.ui_flags.get("historyTimestamps") == Some(&false) {
+            0
+        } else {
+            now_secs()
+        };
+        if ts > 0 {
+            store.settings.last_used.insert(id.clone(), ts);
+        }
+        // History length is an expert value (default 100, ceiling COPY_HISTORY_MAX).
+        let cap = store
+            .settings
+            .ui_values
+            .get("historyMax")
+            .copied()
+            .unwrap_or(100.0)
+            .clamp(0.0, COPY_HISTORY_MAX as f64) as usize;
+        let cutoff = history_max_age(&store.settings).map(|age| now_secs().saturating_sub(age));
+        save_settings(&app, &store.settings);
+        (CopyEntry { id, ts }, cap, cutoff)
     };
-    // History length is an expert value (default 50, ceiling COPY_HISTORY_MAX).
-    let cap = store
-        .settings
-        .ui_values
-        .get("historyMax")
-        .copied()
-        .unwrap_or(50.0)
-        .clamp(0.0, COPY_HISTORY_MAX as f64) as usize;
-    store.settings.copy_log.retain(|e| e.id != id);
-    if cap > 0 {
-        store.settings.copy_log.insert(0, CopyEntry { id, ts });
-        store.settings.copy_log.truncate(cap);
+    // The history itself lives in its own table — appended outside the lock so a
+    // huge log never blocks other DB work and never bloats the settings blob.
+    if let Some(conn) = db_conn(&app) {
+        let _ = db_append_copy(&conn, &entry, cap, cutoff);
     }
-    prune_history(&mut store.settings);
-    save_settings(&app, &store.settings);
     Ok(())
 }
 
 // Wipe copy history + usage counters (privacy / journal "clear").
 #[tauri::command]
 async fn clear_copy_history(app: AppHandle, state: State<'_, Db>) -> Result<(), String> {
-    let mut store = lock(&state);
-    store.settings.copy_log.clear();
-    store.settings.usage.clear();
-    save_settings(&app, &store.settings);
+    {
+        let mut store = lock(&state);
+        store.settings.usage.clear();
+        store.settings.last_used.clear();
+        save_settings(&app, &store.settings);
+    }
+    if let Some(conn) = db_conn(&app) {
+        let _ = conn.execute("DELETE FROM copy_log", []);
+    }
     Ok(())
+}
+
+// Newest copy-history entries for the journal (own table; capped for the UI).
+// Async: the grouped query scans the table, so keep it off the UI thread.
+#[tauri::command]
+async fn recent_copies(app: AppHandle, limit: usize, grouped: bool) -> Vec<CopyEntry> {
+    db_conn(&app)
+        .map(|c| db_recent_copies(&c, limit.min(COPY_HISTORY_MAX), grouped))
+        .unwrap_or_default()
 }
 
 // Must stay async: window creation from a sync command deadlocks on Windows
@@ -1587,6 +2082,41 @@ fn set_float_bounds_native(win: &tauri::WebviewWindow, x: f64, y: f64, w: f64, h
     unsafe { SetWindowPos(hwnd, 0, px, py, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE) != 0 }
 }
 
+// Expert privacy flag (Datenschutz tab). Missing = enabled, like every expert
+// flag, so capture exclusion is ON by default.
+const CAPTURE_FLAG_KEY: &str = "captureExclusion";
+
+fn capture_excluded(settings: &Settings) -> bool {
+    settings.ui_flags.get(CAPTURE_FLAG_KEY) != Some(&false)
+}
+
+// Keep our own windows out of OTHER capture tools (Snipping Tool, Print Screen,
+// Game Bar, OBS, and Prompt Saver's own window picker): when excluded the window
+// stays fully visible to the user but is omitted from any screen capture. Our own
+// snip already hides these windows before grabbing, so this never affects it.
+// WDA_EXCLUDEFROMCAPTURE needs Windows 10 2004+; on older builds the call simply
+// fails and the window stays capturable. No WDA_MONITOR fallback: a black
+// rectangle in screenshots is worse than the window simply showing, and 2004+
+// covers every supported system.
+#[cfg(windows)]
+fn set_capture_exclusion(win: &tauri::WebviewWindow, excluded: bool) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowDisplayAffinity(hwnd: isize, affinity: u32) -> i32;
+    }
+    const WDA_NONE: u32 = 0x0;
+    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x11;
+    if let Ok(h) = win.hwnd() {
+        let aff = if excluded { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+        unsafe {
+            SetWindowDisplayAffinity(h.0 as isize, aff);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_capture_exclusion(_win: &tauri::WebviewWindow, _excluded: bool) {}
+
 // Set a floating window's position AND size together (logical px). Used by the
 // edge/corner resize so the grabbed edge tracks the cursor 1:1.
 #[tauri::command]
@@ -1634,15 +2164,31 @@ struct MonitorCap {
 }
 struct SnipState(Mutex<Vec<MonitorCap>>);
 
-// Close every per-monitor overlay window and bring the floating pills back.
+// Overlay preview prepared in the background the instant the desktop is frozen,
+// so the (heavy) JPEG encode overlaps WebView creation instead of running after
+// it. None = still encoding, Some(None) = encode failed, Some(Some) = ready.
+#[derive(Clone)]
+// Frozen-desktop preview. None = still encoding, Some(None) = failed, Some(Some) = ready.
+struct SnipPreview(Arc<Mutex<Option<Option<SnipBg>>>>);
+
+// True while a snip session is on screen (between open_snip and capture/cancel).
+// The overlay window itself is kept alive and reused, so this flag — not the
+// window's existence — is what tells open_snip a snip is already in progress.
+static SNIP_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+// End the current snip session: HIDE (never close) the reusable overlay so its
+// warm WebView2 survives for the next snip, bring the app's own windows back, and
+// drop the temp preview. Closing the overlay is what forced every snip to pay the
+// full WebView2 cold-start — keeping it alive is the whole speed win.
 fn close_all_snip(app: &AppHandle) {
     for (label, win) in app.webview_windows() {
         if label.starts_with("snip-") {
-            let _ = win.close();
+            let _ = win.hide();
         }
     }
     set_app_windows_hidden(app, false);
     remove_snip_preview();
+    SNIP_ACTIVE.store(false, Ordering::SeqCst);
 }
 
 // Hide (or restore) the app's own windows — the main window and floating pills —
@@ -1651,7 +2197,18 @@ fn close_all_snip(app: &AppHandle) {
 fn set_app_windows_hidden(app: &AppHandle, hidden: bool) {
     for (label, win) in app.webview_windows() {
         if label == "main" || label.starts_with("float-") {
-            let _ = if hidden { win.hide() } else { win.show() };
+            if hidden {
+                let _ = win.hide();
+            } else {
+                let _ = win.show();
+                // Bring the main window back to the front (and out of any minimized
+                // state) so finishing/cancelling a snip never leaves it hidden behind
+                // other windows — which reads as the app having minimized itself.
+                if label == "main" {
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
         }
     }
 }
@@ -1693,7 +2250,7 @@ fn remove_snip_preview() {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct SnipBg {
     // Preview source: a temp-file path (is_file=true, loaded via convertFileSrc)
     // or a base64 data URL fallback (is_file=false).
@@ -1709,6 +2266,8 @@ struct SnipBg {
 struct SnipResult {
     data_url: String,
     path: String,
+    // Suggested button name: "Screenshot <app?> <timestamp>".
+    name: String,
 }
 
 // A selectable top-level window in stitched-image physical pixels.
@@ -1750,7 +2309,10 @@ fn capture_screen_rect(x: i32, y: i32, w: i32, h: i32) -> Option<image::RgbaImag
     #[repr(C)]
     struct BmInfo { header: BmHeader, colors: [u32; 3] }
     const SRCCOPY: u32 = 0x00CC_0020;
-    if w <= 0 || h <= 0 {
+    // Reject non-positive or absurdly large rects: keep w*h*4 a sane allocation so
+    // a spoofed/extreme virtual-screen metric can never abort the process on OOM.
+    // 300M px ≈ 1.2 GB RGBA — far above any real multi-monitor desktop.
+    if w <= 0 || h <= 0 || (w as u64) * (h as u64) > 300_000_000 {
         return None;
     }
     unsafe {
@@ -1794,11 +2356,14 @@ fn capture_screen_rect(x: i32, y: i32, w: i32, h: i32) -> Option<image::RgbaImag
         if got == 0 {
             return None;
         }
-        // GDI returns BGRA; convert to RGBA and force opaque alpha.
-        for px in buf.chunks_exact_mut(4) {
+        // GDI returns BGRA; convert to RGBA and force opaque alpha. Parallelized —
+        // a multi-monitor capture is tens of millions of pixels, so a serial swap
+        // was a big slice of the freeze time.
+        use rayon::prelude::*;
+        buf.par_chunks_exact_mut(4).for_each(|px| {
             px.swap(0, 2);
             px[3] = 255;
-        }
+        });
         image::RgbaImage::from_raw(w as u32, h as u32, buf)
     }
 }
@@ -1858,43 +2423,12 @@ fn freeze_desktop() -> Result<(image::RgbaImage, i32, i32), String> {
     Ok((canvas, min_x, min_y))
 }
 
-// Freeze the desktop and open a single overlay spanning all screens. The
-// frontend maps the cursor by ratio against the displayed frozen image, so the
-// selection is pixel-exact on any DPI mix AND can be dragged across monitors.
-#[tauri::command]
-async fn open_snip(app: AppHandle, state: State<'_, SnipState>) -> Result<(), String> {
-    if let Some((_, w)) = app
-        .webview_windows()
-        .into_iter()
-        .find(|(l, _)| l.starts_with("snip-"))
-    {
-        let _ = w.set_focus();
-        return Ok(());
-    }
-    // Hide our own windows BEFORE freezing so they're never in the capture and
-    // the target underneath (e.g. Task Manager behind the main window) is
-    // revealed. A short settle lets the hide reach the screen first.
-    set_app_windows_hidden(&app, true);
-    tokio::time::sleep(std::time::Duration::from_millis(45)).await;
-    let (canvas, min_x, min_y) = freeze_desktop()?;
-    let (total_w, total_h) = canvas.dimensions();
-    // Store the frozen desktop as the single entry; its origin is (min_x,min_y).
-    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = vec![MonitorCap {
-        image: canvas,
-        x: min_x,
-        y: min_y,
-        width: total_w,
-        height: total_h,
-    }];
-
-    // One opaque overlay covering the whole virtual desktop (shows the frozen
-    // stitched screenshot — far more reliable than a transparent surface).
-    // Borderless (WS_POPUP) so the client area starts exactly at the virtual
-    // desktop origin — no frame inset, no left gap. shadow(false) drops the DWM
-    // shadow. Not resizable/maximizable/minimizable + no drag region in the page
-    // => the user cannot move it; no snap-back handler needed (that handler
-    // fought tao's own placement and caused the visible drift).
-    let win = WebviewWindowBuilder::new(&app, "snip-0", WebviewUrl::App("snip.html".into()))
+// Build the (hidden) snip overlay window — borderless WS_POPUP, no shadow, fixed
+// size, always-on-top. Created once and reused across snips so the WebView2
+// cold-start is paid a single time. A Destroyed handler clears the session and
+// restores the app's windows if the overlay is ever torn down.
+fn build_snip_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    let win = WebviewWindowBuilder::new(app, "snip-0", WebviewUrl::App("snip.html".into()))
         .title("")
         .decorations(false)
         .shadow(false)
@@ -1906,17 +2440,186 @@ async fn open_snip(app: AppHandle, state: State<'_, SnipState>) -> Result<(), St
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
-    // Physical placement = exact virtual-desktop coverage (size first, then
-    // position, so the final op is the position a resize could otherwise nudge).
+    let excluded = app
+        .try_state::<Db>()
+        .map(|s| capture_excluded(&s.lock().unwrap_or_else(|e| e.into_inner()).settings))
+        .unwrap_or(true);
+    set_capture_exclusion(&win, excluded);
+    let app_evt = app.clone();
+    win.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) && SNIP_ACTIVE.load(Ordering::SeqCst) {
+            SNIP_ACTIVE.store(false, Ordering::SeqCst);
+            set_app_windows_hidden(&app_evt, false);
+        }
+    });
+    Ok(win)
+}
+
+// Freeze the desktop and open a single overlay spanning all screens. The
+// frontend maps the cursor by ratio against the displayed frozen image, so the
+// selection is pixel-exact on any DPI mix AND can be dragged across monitors.
+//
+// Speed: the preview JPEG is encoded on a background thread the moment the
+// desktop is frozen, so it runs CONCURRENTLY with WebView creation rather than
+// serially after it; the overlay window is built hidden and only revealed once
+// its frozen image has decoded (snip_present), so it never flashes up blank.
+#[tauri::command]
+async fn open_snip(
+    app: AppHandle,
+    state: State<'_, SnipState>,
+    preview: State<'_, SnipPreview>,
+) -> Result<(), String> {
+    // Atomically claim the session. If one is already active and its overlay still
+    // exists, surface that instead of starting a second. (Stale flag with no
+    // window — e.g. the overlay was destroyed — falls through: reclaim and start.)
+    if SNIP_ACTIVE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        if let Some(win) = app.get_webview_window("snip-0") {
+            let _ = win.show();
+            let _ = win.set_focus();
+            return Ok(());
+        }
+        SNIP_ACTIVE.store(true, Ordering::SeqCst);
+    }
+    // Wake the overlay's WebView2 NOW (off-screen) so a long-idle, background-throttled
+    // webview un-throttles DURING the freeze+encode below. Without this head start the
+    // icon path (overlay idle a while) lags behind a retry (whose webview was just
+    // on-screen, still awake). The reuse path re-parks it full off-screen, then emits.
+    if let Some(win) = app.get_webview_window("snip-0") {
+        let _ = win.set_size(PhysicalSize::new(2, 2));
+        let _ = win.set_position(PhysicalPosition::new(-32000, -32000));
+        let _ = win.show();
+    }
+    // Hide our own windows BEFORE freezing so they're never in the capture and
+    // the target underneath (e.g. Task Manager behind the main window) is
+    // revealed. A short settle lets the hide reach the screen first.
+    set_app_windows_hidden(&app, true);
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    let (canvas, min_x, min_y) = freeze_desktop()?;
+    let (total_w, total_h) = canvas.dimensions();
+    // Kick off the preview encode immediately (clone for the worker; the original
+    // stays in state for full-res crops). snip_background just awaits the result.
+    let enc_img = canvas.clone();
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = vec![MonitorCap {
+        image: canvas,
+        x: min_x,
+        y: min_y,
+        width: total_w,
+        height: total_h,
+    }];
+    let slot = preview.0.clone();
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    tauri::async_runtime::spawn_blocking(move || {
+        // Encode the capture at NATIVE resolution — pixel-sharp overlay, no downscale.
+        let bg = encode_snip_jpeg(enc_img.as_raw(), total_w, total_h, SNIP_Q).map(|j| {
+            let (src, is_file) = match write_snip_preview(&j) {
+                Some(path) => (path, true),
+                None => (format!("data:image/jpeg;base64,{}", base64_encode(&j)), false),
+            };
+            SnipBg { src, is_file, width: total_w, height: total_h }
+        });
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(bg);
+    });
+
+    // Reuse the overlay if it already exists. A long-idle HIDDEN WebView2 is heavily
+    // background-throttled (clamped timers, paused rAF/IPC) — THAT, not cold-start, is
+    // why the first snip lagged behind a retry (whose webview was shown moments ago).
+    // So wake it WITHOUT a flash: show it 2×2 off-screen, which flips the page to
+    // "visible" and resumes its JS at full speed. snip_present (fired on the frozen
+    // image's onload, now prompt) sizes + moves it on-screen, so the reveal is instant
+    // and flash-free. Same path for the first snip and every retry → same speed.
+    if let Some(win) = app.get_webview_window("snip-0") {
+        // Park it at FULL size but just off-screen (below everything), shown so the
+        // webview un-throttles and paints. snip_present then only MOVES it on-screen —
+        // no resize, no DPI re-assert — so the reveal can't flicker.
+        let _ = win.set_size(PhysicalSize::new(total_w, total_h));
+        let _ = win.set_position(PhysicalPosition::new(min_x, min_y + total_h as i32 + 100));
+        let _ = win.show();
+        let _ = app.emit_to("snip-0", "snip-begin", ());
+        spawn_reveal_watchdog(app.clone());
+        return Ok(());
+    }
+
+    // Pre-warm missed (first snip happened before startup pre-warm built it): build
+    // the overlay now, paying the WebView2 cold-start once. SNIP_ACTIVE is already
+    // set, so the page's load-time snip_should_begin check drives this session.
+    let win = match build_snip_window(&app) {
+        Ok(w) => w,
+        Err(e) => {
+            // Build failed: clear the session so the app's windows come back.
+            SNIP_ACTIVE.store(false, Ordering::SeqCst);
+            set_app_windows_hidden(&app, false);
+            return Err(e);
+        }
+    };
+    // Size/position the still-hidden window to cover the virtual desktop exactly
+    // (size first, then position, so the final op is the position a resize could
+    // otherwise nudge). snip_present re-asserts after the DPI settle, then shows.
     let _ = win.set_size(PhysicalSize::new(total_w, total_h));
     let _ = win.set_position(PhysicalPosition::new(min_x, min_y));
-    let _ = win.show();
-    // Re-assert once after the window settles on its monitors (WM_DPICHANGED).
-    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-    let _ = win.set_size(PhysicalSize::new(total_w, total_h));
-    let _ = win.set_position(PhysicalPosition::new(min_x, min_y));
-    let _ = win.set_focus();
+    spawn_reveal_watchdog(app.clone());
     Ok(())
+}
+
+// Show the overlay (idempotent): place it to the frozen-desktop geometry, reveal,
+// and re-assert after the per-monitor DPI settle the show can trigger. Used by the
+// page (snip_present, fast path after the frozen image decodes) and by a backend
+// watchdog that force-reveals if the page somehow never asks.
+async fn reveal_snip(app: &AppHandle) {
+    let geom = {
+        let state: State<SnipState> = app.state();
+        let guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        guard.first().map(|c| (c.x, c.y, c.width, c.height))
+    };
+    let (min_x, min_y, total_w, total_h) = match geom {
+        Some(g) => g,
+        None => return,
+    };
+    if let Some(win) = app.get_webview_window("snip-0") {
+        // Already full-size (parked off-screen on reuse), so this moves it on-screen in
+        // one shot — no resize, no re-assert → no flicker. The frozen image is already
+        // decoded (snip_present fires on its onload). set_size covers the cold path.
+        let _ = win.set_size(PhysicalSize::new(total_w, total_h));
+        let _ = win.set_position(PhysicalPosition::new(min_x, min_y));
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+// Reveal the prepared overlay once its frozen image has decoded in the page, so
+// the screenshot view appears already-painted instead of flashing blank first.
+#[tauri::command]
+async fn snip_present(app: AppHandle) -> Result<(), String> {
+    reveal_snip(&app).await;
+    Ok(())
+}
+
+// Belt-and-suspenders: if the page hasn't revealed the overlay shortly after a
+// snip starts (e.g. a hidden WebView2 ever suspended its JS), force it visible so
+// the screenshot view can never get stuck hidden. No-op once already shown.
+fn spawn_reveal_watchdog(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if !SNIP_ACTIVE.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(win) = app.get_webview_window("snip-0") {
+            if !win.is_visible().unwrap_or(true) {
+                reveal_snip(&app).await;
+            }
+        }
+    });
+}
+
+// The overlay page asks this on load: begin a session immediately only if one is
+// already active (the cold-build path), otherwise stay idle — this is what lets the
+// window be pre-warmed at startup without auto-triggering a bogus snip. Reused
+// windows are driven per-snip by the "snip-begin" event instead.
+#[tauri::command]
+fn snip_should_begin() -> bool {
+    SNIP_ACTIVE.load(Ordering::SeqCst)
 }
 
 // Visible top-level windows overlapping the virtual desktop, topmost first, in
@@ -1959,53 +2662,37 @@ fn snip_windows(state: State<SnipState>, index: usize) -> Vec<SnipWindow> {
     out
 }
 
-// The frozen monitor capture as a data URL, only for the overlay preview — JPEG
-// (no alpha needed) encodes far faster than PNG, so the overlay opens quicker.
-// The saved/copied crop still comes from the lossless in-memory image.
-// Async: the full-frame clone + JPEG encode (tens of MB) must not run on the UI
-// thread. The image is cloned out under the lock, then encoded lock-free.
+// Overlay preview JPEG quality (encoded at native resolution — pixel-sharp).
+const SNIP_Q: u8 = 80;
+// Saved-button JPEG quality: higher (crisp text) but still a fraction of a PNG's
+// size + encode time — a full-res PNG data URL used to stall the whole app on save.
+const SNIP_SAVE_Q: u8 = 90;
+
+// Encode RGBA bytes to a JPEG for the overlay preview. jpeg-encoder = SIMD baseline JPEG,
+// much faster than the image crate's. Returns the raw JPEG bytes.
+fn encode_snip_jpeg(rgba: &[u8], w: u32, h: u32, quality: u8) -> Option<Vec<u8>> {
+    let mut buf = Vec::<u8>::new();
+    jpeg_encoder::Encoder::new(&mut buf, quality)
+        .encode(rgba, w as u16, h as u16, jpeg_encoder::ColorType::Rgba)
+        .ok()?;
+    Some(buf)
+}
+
+// Hand the overlay its frozen-desktop preview. The encode was started in
+// open_snip the instant the desktop was frozen; here we just wait for it (the
+// slot is usually already filled, so this returns near-instantly) and hand it
+// over. index is kept for the existing single-overlay call signature.
 #[tauri::command]
-async fn snip_background(state: State<'_, SnipState>, index: usize) -> Result<Option<SnipBg>, String> {
-    let (img, full_w, full_h) = {
-        let guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-        match guard.get(index) {
-            Some(c) => (c.image.clone(), c.width, c.height),
-            None => return Ok(None),
+async fn snip_background(preview: State<'_, SnipPreview>, index: usize) -> Result<Option<SnipBg>, String> {
+    let _ = index;
+    for _ in 0..2000 {
+        let ready = preview.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(bg) = ready {
+            return Ok(bg);
         }
-    };
-    // Display copy only — the marked crop always comes from the full-res in-memory
-    // image. The preview stays full-resolution (crisp) up to a large cap; only an
-    // extreme multi-monitor span is downscaled (fast box filter) to keep the JPEG
-    // sane. The old cost was a Triangle resize (~1s), not the resolution, so full
-    // res here still encodes in well under half a second.
-    const DISPLAY_MAX: u32 = 10240;
-    let longest = full_w.max(full_h);
-    let disp = if longest > DISPLAY_MAX {
-        let r = DISPLAY_MAX as f32 / longest as f32;
-        image::imageops::thumbnail(
-            &img,
-            ((full_w as f32 * r) as u32).max(1),
-            ((full_h as f32 * r) as u32).max(1),
-        )
-    } else {
-        img
-    };
-    let rgb = image::DynamicImage::ImageRgba8(disp).into_rgb8();
-    let mut buf = std::io::Cursor::new(Vec::<u8>::new());
-    {
-        let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 80);
-        if enc.encode_image(&rgb).is_err() {
-            return Ok(None);
-        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
-    // Prefer a temp file (loaded via the asset protocol); fall back to a base64
-    // data URL only if the file write fails.
-    let jpeg = buf.into_inner();
-    let (src, is_file) = match write_snip_preview(&jpeg) {
-        Some(path) => (path, true),
-        None => (format!("data:image/jpeg;base64,{}", base64_encode(&jpeg)), false),
-    };
-    Ok(Some(SnipBg { src, is_file, width: full_w, height: full_h }))
+    Ok(None)
 }
 
 #[tauri::command]
@@ -2014,37 +2701,201 @@ fn snip_cancel(app: AppHandle, state: State<SnipState>) {
     state.0.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
-// Save a screenshot PNG into the user's Pictures\Screenshots folder.
-fn save_screenshot(png: &[u8]) -> String {
+// Target folder for saved screenshots: a custom expert path, else Pictures\Screenshots.
+fn screenshot_dir(custom: &str) -> PathBuf {
+    let c = custom.trim();
+    if !c.is_empty() {
+        return PathBuf::from(c);
+    }
     let base = std::env::var("USERPROFILE")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::temp_dir());
-    let dir = base.join("Pictures").join("Screenshots");
-    let _ = fs::create_dir_all(&dir);
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let path = dir.join(format!("PromptSaver-{}.png", ts));
-    if fs::write(&path, png).is_ok() {
+    base.join("Pictures").join("Screenshots")
+}
+
+// Save screenshot bytes (JPEG) into the given folder as "<stem>.jpg". "" on failure.
+fn save_screenshot(bytes: &[u8], dir: &std::path::Path, stem: &str) -> String {
+    let _ = fs::create_dir_all(dir);
+    let path = dir.join(format!("{}.jpg", stem));
+    if fs::write(&path, bytes).is_ok() {
         path.to_string_lossy().to_string()
     } else {
         String::new()
     }
 }
 
-// Encode, copy to clipboard, save a PNG, close the overlay and notify the UI.
-fn finalize_capture(app: &AppHandle, crop: image::RgbaImage) -> Result<(), String> {
+// Decode a "data:...;base64,..." URL to its raw image bytes (format-agnostic).
+fn data_url_bytes(data_url: &str) -> Vec<u8> {
+    let b64 = data_url.rsplit_once(',').map(|(_, b)| b).unwrap_or(data_url);
+    base64_decode(b64.trim())
+}
+
+// Save a screenshot data URL into Pictures\Screenshots now (result dialog: the
+// user enabled folder-saving after the shot was taken). Returns the path.
+#[tauri::command]
+async fn save_screenshot_now(state: State<'_, Db>, data_url: String) -> Result<Option<String>, String> {
+    let bytes = data_url_bytes(&data_url);
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let custom = lock(&state).settings.ui_texts.get("screenshotDir").cloned().unwrap_or_default();
+    let path = save_screenshot(&bytes, &screenshot_dir(&custom), &format!("Screenshot-{}", local_stamp()));
+    Ok(if path.is_empty() { None } else { Some(path) })
+}
+
+// Save the screenshot anywhere via a native "Save as" dialog. Returns the chosen
+// path, or None if the user cancelled.
+#[tauri::command]
+async fn save_screenshot_as(app: AppHandle, data_url: String) -> Result<Option<String>, String> {
+    let bytes = data_url_bytes(&data_url);
+    if bytes.is_empty() {
+        return Err("empty image".to_string());
+    }
+    let name = format!("Screenshot-{}.jpg", local_stamp());
+    match file_dialog(&app)
+        .add_filter("JPEG", &["jpg"])
+        .set_file_name(&name)
+        .save_file()
+    {
+        Some(p) => {
+            fs::write(&p, &bytes).map_err(|e| e.to_string())?;
+            Ok(Some(p.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+// Delete a previously auto-saved screenshot (result dialog: folder-saving turned
+// off). Safety: only ever removes our own Screenshot-*.jpg (or legacy
+// PromptSaver-*.png) files.
+#[tauri::command]
+async fn delete_screenshot_file(path: String) -> bool {
+    let p = std::path::Path::new(&path);
+    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let ours = (name.starts_with("Screenshot-") && name.ends_with(".jpg"))
+        || (name.starts_with("PromptSaver-") && name.ends_with(".png"));
+    if ours && p.is_file() {
+        fs::remove_file(p).is_ok()
+    } else {
+        false
+    }
+}
+
+// Default screenshot folder path (shown greyed in the expert menu when no custom
+// folder is set), so the user always sees where screenshots would go.
+#[tauri::command]
+fn default_screenshot_dir() -> String {
+    screenshot_dir("").to_string_lossy().to_string()
+}
+
+// Native folder picker (used by the expert screenshot-dir + data-dir options).
+#[tauri::command]
+async fn pick_folder(app: AppHandle) -> Option<String> {
+    file_dialog(&app)
+        .pick_folder()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+// Current effective store location (shown in the expert menu).
+#[tauri::command]
+fn current_data_dir(app: AppHandle) -> String {
+    data_dir(&app).to_string_lossy().to_string()
+}
+
+// Redirect the store to a new folder (applies on next launch). Adopts an existing
+// store in the target if present, otherwise copies the current one across. The old
+// data is left untouched; the caller may offer to delete it. Returns the old path.
+#[tauri::command]
+async fn set_data_dir(app: AppHandle, state: State<'_, Db>, dir: String) -> Result<String, String> {
+    let trimmed = dir.trim();
+    if trimmed.is_empty() {
+        return Err("empty path".to_string());
+    }
+    let new = PathBuf::from(trimmed);
+    fs::create_dir_all(&new).map_err(|e| e.to_string())?;
+    let current = data_dir(&app);
+    let old = current.to_string_lossy().to_string();
+    if new == current {
+        return Ok(old);
+    }
+    // Flush the live state to the current location first.
+    {
+        let store = lock(&state);
+        save_prompts(&app, &store);
+        save_settings(&app, &store.settings);
+    }
+    // Fold the WAL back into data.db so the single-file copy below is complete
+    // (recent copy_log appends can otherwise still live in data.db-wal).
+    if let Some(c) = db_conn(&app) {
+        let _ = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+    // Adopt an existing store in the target; otherwise copy ours across. Abort
+    // before writing the redirect pointer if the copy fails, so a launch can
+    // never be pointed at a truncated store.
+    if !new.join("data.db").exists() {
+        let src = current.join("data.db");
+        if src.exists() {
+            fs::copy(&src, new.join("data.db")).map_err(|e| format!("copy store: {}", e))?;
+        }
+    }
+    // Point future launches at the new folder (pointer lives in the canonical dir).
+    fs::write(
+        default_data_dir(&app).join("datapath"),
+        new.to_string_lossy().as_bytes(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(old)
+}
+
+// Delete the store files in a folder (old location after a move). Only ever
+// removes our known data files — never the folder itself or anything else.
+#[tauri::command]
+async fn delete_data_dir(path: String) -> bool {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return false;
+    }
+    let mut ok = true;
+    for f in ["data.db", "data.db-wal", "data.db-shm", "prompts.json", "settings.json"] {
+        let p = dir.join(f);
+        if p.exists() {
+            ok &= fs::remove_file(&p).is_ok();
+        }
+    }
+    ok
+}
+
+// Local wall-clock stamp for screenshot names: "YYYY-MM-DD_HH-MM-SS" (filename-safe).
+#[cfg(windows)]
+fn local_stamp() -> String {
+    #[repr(C)]
+    struct SystemTimeW { year: u16, month: u16, dow: u16, day: u16, hour: u16, min: u16, sec: u16, ms: u16 }
+    #[link(name = "kernel32")]
+    extern "system" { fn GetLocalTime(st: *mut SystemTimeW); }
+    let mut st = SystemTimeW { year: 0, month: 0, dow: 0, day: 0, hour: 0, min: 0, sec: 0, ms: 0 };
+    unsafe { GetLocalTime(&mut st) };
+    format!("{:04}-{:02}-{:02}_{:02}-{:02}-{:02}", st.year, st.month, st.day, st.hour, st.min, st.sec)
+}
+#[cfg(not(windows))]
+fn local_stamp() -> String { now_secs().to_string() }
+
+// App label for a window shot: drop ".exe" + any path, strip characters illegal in
+// a filename, trim. Empty if nothing usable.
+fn clean_app_name(raw: &str) -> String {
+    let base = raw.rsplit(['\\', '/']).next().unwrap_or(raw);
+    let stem = base.strip_suffix(".exe").or_else(|| base.strip_suffix(".EXE")).unwrap_or(base);
+    stem.chars().filter(|c| !"<>:\"/\\|?*".contains(*c)).collect::<String>().trim().to_string()
+}
+
+// Encode as JPEG, copy to the clipboard, optionally archive to the folder, close the
+// overlay and notify the UI. JPEG (not PNG): a full-res PNG data URL stalled the save.
+fn finalize_capture(app: &AppHandle, crop: image::RgbaImage, app_name: Option<String>) -> Result<(), String> {
     let (cw, ch) = crop.dimensions();
     if cw == 0 || ch == 0 {
         return Err("empty region".to_string());
     }
-    let mut buf = std::io::Cursor::new(Vec::<u8>::new());
-    image::DynamicImage::ImageRgba8(crop.clone())
-        .write_to(&mut buf, image::ImageFormat::Png)
-        .map_err(|e| e.to_string())?;
-    let png = buf.into_inner();
-    let data_url = format!("data:image/png;base64,{}", base64_encode(&png));
+    let jpeg = encode_snip_jpeg(crop.as_raw(), cw, ch, SNIP_SAVE_Q).ok_or("encode failed")?;
+    let data_url = format!("data:image/jpeg;base64,{}", base64_encode(&jpeg));
 
     let _ = arboard::Clipboard::new().and_then(|mut c| {
         c.set_image(arboard::ImageData {
@@ -2053,7 +2904,34 @@ fn finalize_capture(app: &AppHandle, crop: image::RgbaImage) -> Result<(), Strin
             bytes: crop.into_raw().into(),
         })
     });
-    let path = save_screenshot(&png);
+
+    // "Screenshot" + a precise timestamp (+ the source app for a window shot) — the
+    // button name and the optional folder file share the same stamp.
+    let stamp = local_stamp();
+    let label = app_name.as_deref().map(clean_app_name).filter(|s| !s.is_empty());
+    let (name, stem) = match &label {
+        Some(a) => (format!("Screenshot {} {}", a, stamp), format!("Screenshot-{}-{}", a, stamp)),
+        None => (format!("Screenshot {}", stamp), format!("Screenshot-{}", stamp)),
+    };
+
+    // Default: temp-only — the shot lives only as an in-app prompt (encrypted,
+    // removed when the prompt is deleted). The folder copy is opt-in and honors
+    // a custom screenshot directory (expert menu).
+    let (save_to_folder, custom_dir) = app
+        .try_state::<Db>()
+        .map(|s| {
+            let g = s.lock().unwrap_or_else(|e| e.into_inner());
+            (
+                g.settings.ui_flags.get("screenshotSave") == Some(&true),
+                g.settings.ui_texts.get("screenshotDir").cloned().unwrap_or_default(),
+            )
+        })
+        .unwrap_or((false, String::new()));
+    let path = if save_to_folder {
+        save_screenshot(&jpeg, &screenshot_dir(&custom_dir), &stem)
+    } else {
+        String::new()
+    };
 
     close_all_snip(app);
     app.state::<SnipState>()
@@ -2061,7 +2939,7 @@ fn finalize_capture(app: &AppHandle, crop: image::RgbaImage) -> Result<(), Strin
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let _ = app.emit("snip-captured", SnipResult { data_url, path });
+    let _ = app.emit("snip-captured", SnipResult { data_url, path, name });
     Ok(())
 }
 
@@ -2143,7 +3021,7 @@ async fn capture_region(
     height: u32,
 ) -> Result<(), String> {
     let crop = crop_frozen(&state, index, x, y, width, height).ok_or("empty region")?;
-    finalize_capture(&app, crop)
+    finalize_capture(&app, crop, None)
 }
 
 // Top-level windows stacked ABOVE the target that overlap its rect (global
@@ -2243,6 +3121,11 @@ fn window_is_protected(id: u32) -> bool {
 // restore them.
 #[tauri::command]
 async fn capture_window(app: AppHandle, state: State<'_, SnipState>, id: u32) -> Result<(), String> {
+    // Source app name for the button label (best-effort; empty for unknown windows).
+    let app_name = xcap::Window::all()
+        .ok()
+        .and_then(|ws| ws.into_iter().find(|w| w.id() == id))
+        .map(|w| w.app_name().to_string());
     let protected = {
         #[cfg(windows)]
         {
@@ -2266,7 +3149,7 @@ async fn capture_window(app: AppHandle, state: State<'_, SnipState>, id: u32) ->
             .filter(|im| !capture_looks_bad(im))
     };
     if let Some(im) = direct {
-        return finalize_capture(&app, im);
+        return finalize_capture(&app, im, app_name.clone());
     }
 
     // Target's global physical rect + frozen-image origin.
@@ -2292,7 +3175,7 @@ async fn capture_window(app: AppHandle, state: State<'_, SnipState>, id: u32) ->
             if let Some((ox, oy)) = origin {
                 if let Some(im) = crop_frozen(&state, 0, wx - ox, wy - oy, ww as u32, wh as u32) {
                     if !capture_is_blank(&im) {
-                        return finalize_capture(&app, im);
+                        return finalize_capture(&app, im, app_name.clone());
                     }
                 }
             }
@@ -2313,7 +3196,7 @@ async fn capture_window(app: AppHandle, state: State<'_, SnipState>, id: u32) ->
             show_window(o, SW_SHOWNOACTIVATE);
         }
         match grab {
-            Some(im) if !capture_is_blank(&im) => finalize_capture(&app, im),
+            Some(im) if !capture_is_blank(&im) => finalize_capture(&app, im, app_name.clone()),
             _ => {
                 set_snip_overlay_hidden(&app, false);
                 Err("blocked".to_string())
@@ -2326,7 +3209,7 @@ async fn capture_window(app: AppHandle, state: State<'_, SnipState>, id: u32) ->
             .and_then(|(ox, oy)| crop_frozen(&state, 0, wx - ox, wy - oy, ww as u32, wh as u32))
             .filter(|im| !capture_is_blank(im));
         match img {
-            Some(im) => finalize_capture(&app, im),
+            Some(im) => finalize_capture(&app, im, app_name.clone()),
             None => Err("blocked".to_string()),
         }
     }
@@ -2445,9 +3328,19 @@ async fn check_update(state: State<'_, Db>) -> Result<UpdateInfo, String> {
 // Toggle an expert feature flag (enabled = feature on).
 #[tauri::command]
 fn set_ui_flag(app: AppHandle, state: State<Db>, key: String, enabled: bool) {
-    let mut store = lock(&state);
-    store.settings.ui_flags.insert(key, enabled);
-    save_settings(&app, &store.settings);
+    let is_capture = key == CAPTURE_FLAG_KEY;
+    {
+        let mut store = lock(&state);
+        store.settings.ui_flags.insert(key, enabled);
+        save_settings(&app, &store.settings);
+    }
+    // Capture exclusion applies live to every open window. Never hold the store
+    // lock across window API calls (deadlock risk).
+    if is_capture {
+        for (_label, win) in app.webview_windows() {
+            set_capture_exclusion(&win, enabled);
+        }
+    }
 }
 
 // Set an expert numeric value (CSS var / behaviour tweak).
@@ -2469,11 +3362,18 @@ fn set_ui_text(app: AppHandle, state: State<Db>, key: String, value: String) {
 // Clear all expert overrides back to the shipped defaults.
 #[tauri::command]
 fn reset_expert(app: AppHandle, state: State<Db>) {
-    let mut store = lock(&state);
-    store.settings.ui_flags.clear();
-    store.settings.ui_values.clear();
-    store.settings.ui_texts.clear();
-    save_settings(&app, &store.settings);
+    {
+        let mut store = lock(&state);
+        store.settings.ui_flags.clear();
+        store.settings.ui_values.clear();
+        store.settings.ui_texts.clear();
+        save_settings(&app, &store.settings);
+    }
+    // Cleared flags revert capture exclusion to its default (on) — re-assert it
+    // on every open window so the change is immediate.
+    for (_label, win) in app.webview_windows() {
+        set_capture_exclusion(&win, true);
+    }
 }
 
 // Add a version to the skip list — it will not be offered again.
@@ -2505,16 +3405,25 @@ async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
         .take(UPDATE_MAX_BYTES)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("read: {}", e))?;
-    let installer = std::env::temp_dir().join("prompt-saver-setup.exe");
+    // Stage into a fresh, uniquely-named temp subdir so a local attacker can't pre-plant
+    // the installer/script at a predictable path (TOCTOU).
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let stage = std::env::temp_dir().join(format!("prompt-saver-update-{}-{}", std::process::id(), stamp));
+    fs::create_dir_all(&stage).map_err(|e| format!("stage dir: {}", e))?;
+    let installer = stage.join("setup.exe");
     fs::write(&installer, &bytes).map_err(|e| format!("save installer: {}", e))?;
 
-    // Helper script: silent install, relaunch the app, clean up after itself.
+    // Helper script: silent install, relaunch the app, delete the installer + itself.
     let app_exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let script = std::env::temp_dir().join("prompt-saver-update.cmd");
+    let script = stage.join("update.cmd");
     let content = format!(
-        "@echo off\r\n\"{}\" /S\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+        "@echo off\r\n\"{}\" /S\r\nstart \"\" \"{}\"\r\ndel \"{}\"\r\ndel \"%~f0\"\r\n",
         installer.display(),
-        app_exe.display()
+        app_exe.display(),
+        installer.display()
     );
     fs::write(&script, content).map_err(|e| format!("save script: {}", e))?;
 
@@ -2643,69 +3552,23 @@ fn csv_cell(s: &str) -> String {
 }
 
 // Position lines: one per view+grid-size the prompt is placed in.
-fn position_lines(settings: &Settings, id: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    for view in &settings.views {
-        for (key, layout) in &view.layouts {
-            if let Some(cell) = layout.get(id) {
-                lines.push(format!("{}|{}={},{}", view.name, key, cell[0], cell[1]));
-            }
-        }
-    }
-    lines.sort();
-    lines
-}
-
-// View definitions ("Name|CxR"), so an import can rebuild all views exactly.
-fn view_def_lines(settings: &Settings) -> Vec<String> {
-    settings
-        .views
-        .iter()
-        .map(|v| format!("{}|{}", v.name, grid_key(v.cols, v.rows)))
-        .collect()
-}
-
 fn csv_row(cells: &[&str]) -> String {
     cells.iter().map(|c| csv_cell(c)).collect::<Vec<_>>().join(";")
 }
 
-// Exported UI preferences (one key=value per line in the @settings block).
-// Machine-specific options (autostart, window geometry) stay local.
-fn settings_lines(s: &Settings) -> String {
-    format!(
-        "language={}\ntheme={}\ntile_font={}\ntile_size={}\nminimize_to_tray={}\nauto_update={}\nshow_header={}\nshow_composer={}",
-        s.language,
-        s.theme,
-        s.tile_font,
-        s.tile_size,
-        s.minimize_to_tray as u8,
-        s.auto_update as u8,
-        s.show_header as u8,
-        s.show_composer as u8
-    )
-}
-
-fn to_csv(prompts: &[Prompt], settings: &Settings) -> String {
+// Export the prompt library only (incl. images/files) — never app settings,
+// views or grid layout, so importing elsewhere can't clobber the user's setup.
+fn to_csv(prompts: &[Prompt]) -> String {
     let head = [
         "name", "text", "positions", "color", "font", "size", "file", "icon", "show", "copy",
         "image", "caption", "capsize",
     ];
-    let pad = |a: &str, b: &str| {
-        let mut cells = vec![a.to_string(), b.to_string()];
-        cells.resize(head.len(), String::new());
-        csv_row(&cells.iter().map(|c| c.as_str()).collect::<Vec<_>>())
-    };
-    let mut rows = vec![
-        csv_row(&head),
-        pad("@settings", &settings_lines(settings)),
-        pad("@views", &view_def_lines(settings).join("\n")),
-    ];
+    let mut rows = vec![csv_row(&head)];
     for p in prompts {
-        let positions = position_lines(settings, &p.id).join("\n");
         rows.push(csv_row(&[
             &p.name,
             &p.text,
-            &positions,
+            "", // positions omitted (prompts-only export)
             &p.color,
             &p.font,
             &p.font_size.to_string(),
@@ -2721,12 +3584,8 @@ fn to_csv(prompts: &[Prompt], settings: &Settings) -> String {
     rows.join("\r\n")
 }
 
-fn to_txt(prompts: &[Prompt], settings: &Settings) -> String {
-    let mut blocks = vec![
-        format!("@settings\n{}", settings_lines(settings)),
-        format!("@views\n{}", view_def_lines(settings).join("\n")),
-    ];
-    blocks.extend(prompts.iter().map(|p| {
+fn to_txt(prompts: &[Prompt]) -> String {
+    let blocks: Vec<String> = prompts.iter().map(|p| {
         let mut block = format!("### {}\n{}", p.name, p.text);
         if !p.color.is_empty() {
             block.push_str(&format!("\n@color {}", p.color));
@@ -2757,13 +3616,8 @@ fn to_txt(prompts: &[Prompt], settings: &Settings) -> String {
         if !p.image.is_empty() {
             block.push_str(&format!("\n@imagedata {}", p.image));
         }
-        let positions = position_lines(settings, &p.id);
-        if !positions.is_empty() {
-            block.push_str("\n@positions\n");
-            block.push_str(&positions.join("\n"));
-        }
         block
-    }));
+    }).collect();
     blocks.join("\n\n---\n\n")
 }
 
@@ -2773,8 +3627,8 @@ async fn export_prompts(app: AppHandle, state: State<'_, Db>, format: String) ->
     let (content, count) = {
         let store = lock(&state);
         let content = match format.as_str() {
-            "csv" => to_csv(&store.prompts, &store.settings),
-            "txt" => to_txt(&store.prompts, &store.settings),
+            "csv" => to_csv(&store.prompts),
+            "txt" => to_txt(&store.prompts),
             _ => return Err(format!("Unsupported format: {}", format)),
         };
         (content, store.prompts.len())
@@ -2842,7 +3696,10 @@ struct ImportedPrompt {
     show_image: bool,
     copy_image: bool,
     image: String,
-    positions: Vec<String>, // "ViewName|6x5=c,r"
+    // Parsed from legacy exports so their @positions block is consumed cleanly;
+    // grid layout is no longer imported (prompts-only import).
+    #[allow(dead_code)]
+    positions: Vec<String>,
 }
 
 // 0 = follow settings, 1 = auto-fit, otherwise a fixed pixel size.
@@ -2850,9 +3707,8 @@ fn clamp_font_size(size: u32) -> u32 {
     if size <= 1 { size } else { size.clamp(10, 40) }
 }
 
-// Caption: 0 = default size, 1 = auto-scale, otherwise fixed 10..40.
 fn clamp_caption_size(size: u32) -> u32 {
-    if size <= 1 { size } else { size.clamp(10, 40) }
+    clamp_font_size(size)
 }
 
 #[derive(Default)]
@@ -2981,81 +3837,6 @@ fn parse_txt(content: &str) -> ImportData {
 }
 
 // Create/update views from "Name|CxR" definition lines.
-fn apply_view_defs(settings: &mut Settings, defs: &[String]) {
-    for line in defs {
-        let Some((name, key)) = line.split_once('|') else { continue };
-        let Some((c, r)) = key.split_once('x') else { continue };
-        let (Ok(cols), Ok(rows)) = (c.trim().parse::<u32>(), r.trim().parse::<u32>()) else {
-            continue;
-        };
-        let (cols, rows) = (cols.clamp(GRID_MIN, GRID_MAX), rows.clamp(GRID_MIN, GRID_MAX));
-        let name = name.trim();
-        if name.is_empty() {
-            continue;
-        }
-        match settings.views.iter().position(|v| v.name == name) {
-            Some(i) => {
-                settings.views[i].cols = cols;
-                settings.views[i].rows = rows;
-            }
-            None if settings.views.len() < MAX_VIEWS => {
-                settings.views.push(View {
-                    id: gen_id(),
-                    name: name.to_string(),
-                    cols,
-                    rows,
-                    layouts: HashMap::new(),
-                    color: String::new(),
-                });
-            }
-            None => {}
-        }
-    }
-}
-
-// Apply "ViewName|CxR=c,r" placement lines for a freshly imported prompt.
-fn apply_positions(settings: &mut Settings, id: &str, positions: &[String]) {
-    for line in positions {
-        let Some((view_name, rest)) = line.split_once('|') else { continue };
-        let Some((key, cell)) = rest.split_once('=') else { continue };
-        let Some((c, r)) = cell.split_once(',') else { continue };
-        let (Ok(col), Ok(row)) = (c.trim().parse::<u32>(), r.trim().parse::<u32>()) else {
-            continue;
-        };
-        let Some((kc, kr)) = key.split_once('x') else { continue };
-        let (Ok(kcols), Ok(krows)) = (kc.parse::<u32>(), kr.parse::<u32>()) else { continue };
-        if col >= kcols || row >= krows || kcols > GRID_MAX || krows > GRID_MAX {
-            continue;
-        }
-
-        // Find or create the target view (respecting the view limit).
-        let view_index = match settings.views.iter().position(|v| v.name == view_name) {
-            Some(i) => i,
-            None if settings.views.len() < MAX_VIEWS => {
-                settings.views.push(View {
-                    id: gen_id(),
-                    name: view_name.to_string(),
-                    cols: kcols.clamp(GRID_MIN, GRID_MAX),
-                    rows: krows.clamp(GRID_MIN, GRID_MAX),
-                    layouts: HashMap::new(),
-                    color: String::new(),
-                });
-                settings.views.len() - 1
-            }
-            None => continue,
-        };
-
-        let layout = settings.views[view_index]
-            .layouts
-            .entry(key.to_string())
-            .or_default();
-        // Keep existing tiles; only fill the cell if it is free.
-        let occupied = layout.values().any(|v| *v == [col, row]);
-        if !occupied {
-            layout.insert(id.to_string(), [col, row]);
-        }
-    }
-}
 
 // Our own CSV export format back into import data.
 fn parse_csv_data(content: &str) -> ImportData {
@@ -3127,38 +3908,28 @@ async fn import_prompts(app: AppHandle, state: State<'_, Db>) -> Result<usize, S
         .unwrap_or(false);
     let data = if is_csv { parse_csv_data(&content) } else { parse_txt(&content) };
 
-    if data.prompts.is_empty() && data.view_defs.is_empty() {
+    if data.prompts.is_empty() {
         return Err("no prompts found".to_string());
     }
 
+    // Prompts-only import: never touch app settings, views or layout, even if an
+    // older export file still carries those blocks (they are parsed but ignored).
+    // Imported prompts are appended, but an entry identical to one already present
+    // is skipped so the original is kept (no duplicate buttons).
     let mut store = lock(&state);
-    if let Some(lang) = &data.language {
-        store.settings.language = lang.clone();
-    }
-    if let Some(theme) = &data.theme {
-        store.settings.theme = theme.clone();
-    }
-    if let Some(font) = &data.tile_font {
-        store.settings.tile_font = font.clone();
-    }
-    if let Some(size) = data.tile_size {
-        store.settings.tile_size = if size == 0 { 0 } else { size.clamp(10, 40) };
-    }
-    if let Some(v) = data.minimize_to_tray {
-        store.settings.minimize_to_tray = v;
-    }
-    if let Some(v) = data.auto_update {
-        store.settings.auto_update = v;
-    }
-    if let Some(v) = data.show_header {
-        store.settings.show_header = v;
-    }
-    if let Some(v) = data.show_composer {
-        store.settings.show_composer = v;
-    }
-    apply_view_defs(&mut store.settings, &data.view_defs);
-    let count = data.prompts.len();
+    let sig = |name: &str, text: &str, file: &str, image: &str, copy: bool| {
+        format!("{name}\u{1}{text}\u{1}{file}\u{1}{image}\u{1}{copy}")
+    };
+    let mut seen: std::collections::HashSet<String> = store
+        .prompts
+        .iter()
+        .map(|p| sig(&p.name, &p.text, &p.file_path, &p.image, p.copy_image))
+        .collect();
+    let mut count = 0usize;
     for item in data.prompts {
+        if !seen.insert(sig(&item.name, &item.text, &item.file_path, &item.image, item.copy_image)) {
+            continue; // duplicate of an existing (or earlier imported) prompt
+        }
         let prompt = Prompt {
             id: gen_id(),
             name: item.name,
@@ -3173,18 +3944,94 @@ async fn import_prompts(app: AppHandle, state: State<'_, Db>) -> Result<usize, S
             caption_size: clamp_caption_size(item.caption_size),
             font: item.font,
             font_size: clamp_font_size(item.font_size),
+            favorite: false,
         };
-        apply_positions(&mut store.settings, &prompt.id, &item.positions);
         store.prompts.push(prompt);
+        count += 1;
     }
     save_prompts(&app, &store);
-    save_settings(&app, &store.settings);
     let pref = store.settings.theme.clone();
     drop(store);
-    // An imported theme applies immediately (window background + UI event).
     let effective = effective_theme(&app, &pref);
     apply_window_bg(&app, &effective);
     let _ = app.emit("theme-changed", effective);
+    Ok(count)
+}
+
+// Full backup: prompts + settings as one JSON file ("export/import everything").
+#[derive(Serialize, Deserialize)]
+struct Backup {
+    prompts: Vec<Prompt>,
+    settings: Settings,
+}
+
+#[tauri::command]
+async fn export_all(app: AppHandle, state: State<'_, Db>) -> Result<usize, String> {
+    let (json, count) = {
+        let store = lock(&state);
+        let backup = Backup {
+            prompts: store.prompts.clone(),
+            settings: store.settings.clone(),
+        };
+        let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+        (json, store.prompts.len())
+    };
+    let file = file_dialog(&app)
+        .set_file_name("prompt-saver-backup.json")
+        .add_filter("Prompt Saver backup", &["json"])
+        .save_file();
+    match file {
+        Some(path) => {
+            fs::write(&path, json).map_err(|e| e.to_string())?;
+            Ok(count)
+        }
+        None => Err("canceled".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn import_all(app: AppHandle, state: State<'_, Db>) -> Result<usize, String> {
+    let file = file_dialog(&app)
+        .add_filter("Prompt Saver backup", &["json"])
+        .pick_file();
+    let Some(path) = file else {
+        return Err("canceled".to_string());
+    };
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let backup: Backup =
+        serde_json::from_str(&content).map_err(|_| "not a Prompt Saver backup".to_string())?;
+
+    let (theme, hotkey, count) = {
+        let mut store = lock(&state);
+        store.prompts = backup.prompts;
+        // A backup written by hand could miss ids; keep every prompt addressable.
+        for p in store.prompts.iter_mut() {
+            if p.id.is_empty() {
+                p.id = gen_id();
+            }
+        }
+        migrate_prompts(&mut store.prompts);
+        store.settings = backup.settings;
+        save_prompts(&app, &store);
+        save_settings(&app, &store.settings);
+        (
+            store.settings.theme.clone(),
+            store.settings.hotkey.clone(),
+            store.prompts.len(),
+        )
+    };
+    // Re-apply the visible parts of the imported settings without a restart.
+    let effective = effective_theme(&app, &theme);
+    apply_window_bg(&app, &effective);
+    let _ = app.emit("theme-changed", effective);
+    {
+        use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+        let gs = app.global_shortcut();
+        let _ = gs.unregister_all();
+        if let Ok(sc) = hotkey.trim().parse::<Shortcut>() {
+            let _ = gs.register(sc);
+        }
+    }
     Ok(count)
 }
 
@@ -3266,6 +4113,31 @@ fn update_geom<F: FnOnce(&mut WindowGeom)>(handle: &AppHandle, f: F) {
     }
 }
 
+// Append one line to a local crash log so a hard failure on a user's machine
+// leaves something diagnosable. Privacy: the message is only the panic location
+// and our own static panic text (never prompt content or other user data), and
+// the file is local — never uploaded. Rotates past 256 KB so it can't grow
+// without bound. Best-effort: every step is ignored on failure.
+fn append_crash_log(msg: &str) {
+    let dir = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(DATA_FOLDER);
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join("error.log");
+    if fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
+        let _ = fs::remove_file(&path);
+    }
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    use std::io::Write;
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "[t={} v{}] {}", secs, env!("CARGO_PKG_VERSION"), msg);
+    }
+}
+
 // ---------- App entry ----------
 
 // WebView2 runtime is the only external requirement; offer the official
@@ -3283,14 +4155,71 @@ fn ensure_webview2() -> bool {
         .set_buttons(rfd::MessageButtons::YesNo)
         .show();
     if answer == rfd::MessageDialogResult::Yes {
-        // Official Evergreen bootstrapper download.
-        use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", "https://go.microsoft.com/fwlink/p/?LinkId=2124703"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
+        // Try a silent download + install of the official Evergreen runtime; if
+        // that fails (offline/blocked), fall back to opening the download page.
+        if install_webview2_runtime() {
+            // The runtime exists now, but this process started without it —
+            // relaunch so a fresh instance loads the webview.
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).spawn();
+            }
+        } else {
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", "https://go.microsoft.com/fwlink/p/?LinkId=2124703"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
     }
     false
+}
+
+// Download the Microsoft Evergreen WebView2 bootstrapper to %TEMP% and run it.
+// Returns true only if the installer reports success. Fully guarded: any failure
+// falls back to the manual download link.
+#[cfg(windows)]
+fn install_webview2_runtime() -> bool {
+    use std::io::Read;
+    use std::os::windows::process::CommandExt;
+    const BOOTSTRAPPER_URL: &str = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
+    let resp = match ureq::get(BOOTSTRAPPER_URL)
+        .set("User-Agent", "PromptSaver")
+        .timeout(std::time::Duration::from_secs(300))
+        .call()
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    let mut bytes = Vec::new();
+    if resp
+        .into_reader()
+        .take(8 * 1024 * 1024)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.is_empty()
+    {
+        return false;
+    }
+    // Stage into a unique temp subdir so a local attacker can't pre-plant the
+    // installer at a predictable path (TOCTOU) — matching install_update.
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("prompt-saver-wv2-{}-{}", std::process::id(), stamp));
+    if fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    let path = dir.join("MicrosoftEdgeWebview2Setup.exe");
+    if fs::write(&path, &bytes).is_err() {
+        return false;
+    }
+    std::process::Command::new(&path)
+        .args(["/install"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 pub fn run() {
@@ -3298,8 +4227,12 @@ pub fn run() {
     if !ensure_webview2() {
         return;
     }
-    // Surface panics on stderr (visible in a dev console) without writing files.
-    std::panic::set_hook(Box::new(|info| eprintln!("{}", info)));
+    // Surface panics on stderr (dev console) AND append a no-PII line to a local
+    // crash log, so a failure in the field leaves a diagnosable trace.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("{}", info);
+        append_crash_log(&info.to_string());
+    }));
 
     tauri::Builder::default()
         // Only one instance app-wide (keyed by app identifier, independent of
@@ -3307,6 +4240,16 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+        // Optional global hotkey: pressing it summons the window + quick-launcher.
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        summon_launcher(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle().clone();
             let store = load_store(&handle);
@@ -3321,9 +4264,20 @@ pub fn run() {
             let autostart = store.settings.autostart;
             let start_min = store.settings.start_minimized;
             let on_top = store.settings.always_on_top;
+            let capture_excl = capture_excluded(&store.settings);
+            let hotkey = store.settings.hotkey.clone();
 
             app.manage(Mutex::new(store));
             app.manage(SnipState(Mutex::new(Vec::new())));
+            app.manage(SnipPreview(Arc::new(Mutex::new(None))));
+
+            // Re-arm the saved global hotkey (ignored if unset or invalid).
+            if !hotkey.is_empty() {
+                if let Ok(sc) = hotkey.parse::<tauri_plugin_global_shortcut::Shortcut>() {
+                    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                    let _ = app.global_shortcut().register(sc);
+                }
+            }
 
             // Launched by autostart with --minimized: stay in the tray.
             let start_hidden = std::env::args().any(|a| a == "--minimized");
@@ -3332,6 +4286,7 @@ pub fn run() {
                 let geom = resolve_geometry(&main, saved_geom);
                 let _ = main.set_size(tauri::LogicalSize::new(geom.width, geom.height));
                 let _ = main.set_position(PhysicalPosition::new(geom.x, geom.y));
+                set_capture_exclusion(&main, capture_excl);
                 if on_top {
                     let _ = main.set_always_on_top(true);
                 }
@@ -3403,14 +4358,16 @@ pub fn run() {
                         }
                     }
                     WindowEvent::CloseRequested { api, .. } => {
-                        let minimize = handle2
-                            .try_state::<Db>()
-                            .map(|s| {
-                                s.lock().unwrap_or_else(|e| e.into_inner())
-                                    .settings
-                                    .minimize_to_tray
-                            })
-                            .unwrap_or(false);
+                        // Portable always closes fully; installed honours the tray setting.
+                        let minimize = !is_portable()
+                            && handle2
+                                .try_state::<Db>()
+                                .map(|s| {
+                                    s.lock().unwrap_or_else(|e| e.into_inner())
+                                        .settings
+                                        .minimize_to_tray
+                                })
+                                .unwrap_or(false);
                         if minimize {
                             api.prevent_close();
                             if let Some(w) = handle2.get_webview_window("main") {
@@ -3488,6 +4445,23 @@ pub fn run() {
                 open_floating(&handle, prompt);
             }
 
+            // Pre-warm the snip overlay shortly after launch (off the startup hot
+            // path) so even the FIRST screenshot opens instantly — the WebView2
+            // cold-start is paid here in the background, not on first use.
+            let h_pw = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                let h = h_pw.clone();
+                let _ = h_pw.run_on_main_thread(move || {
+                    if h.get_webview_window("snip-0").is_none() {
+                        // Just build it (hidden) so the first snip skips WebView2
+                        // cold-start. Waking it from throttle + its first paint are
+                        // handled by the off-screen show on the reuse path in open_snip.
+                        let _ = build_snip_window(&h);
+                    }
+                });
+            });
+
             // Update check: right after launch, then once a day (if enabled).
             let h2 = handle.clone();
             std::thread::spawn(move || {
@@ -3525,6 +4499,7 @@ pub fn run() {
             get_prompt,
             add_prompt,
             update_prompt,
+            set_favorite,
             delete_prompt,
             delete_all_data,
             set_language,
@@ -3534,6 +4509,7 @@ pub fn run() {
             add_view,
             rename_view,
             set_view_color,
+            remap_colors,
             delete_view,
             set_active_view,
             get_settings,
@@ -3544,6 +4520,7 @@ pub fn run() {
             copy_text,
             record_copy,
             clear_copy_history,
+            recent_copies,
             toggle_floating,
             set_float_scale,
             resize_float_pill,
@@ -3556,6 +4533,7 @@ pub fn run() {
             check_update,
             install_update,
             set_auto_update,
+            set_hotkey,
             set_bars,
             set_minimize_on_close,
             set_always_on_top,
@@ -3566,6 +4544,8 @@ pub fn run() {
             skip_version,
             open_snip,
             snip_background,
+            snip_present,
+            snip_should_begin,
             snip_windows,
             snip_cancel,
             capture_region,
@@ -3575,11 +4555,21 @@ pub fn run() {
             set_start_minimized,
             export_prompts,
             import_prompts,
+            export_all,
+            import_all,
             get_clipboard_image,
             get_clipboard_file_path,
             pick_file_path,
             load_image_file,
-            missing_files
+            missing_files,
+            save_screenshot_now,
+            save_screenshot_as,
+            delete_screenshot_file,
+            default_screenshot_dir,
+            pick_folder,
+            current_data_dir,
+            set_data_dir,
+            delete_data_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -3588,6 +4578,49 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_crypt_roundtrip() {
+        let secret = "prompt with sécret 🔐 {#{x}#}";
+        assert_eq!(dec_str(&enc_str(secret)), secret);
+        // Legacy plaintext (no prefix) passes through unchanged for migration.
+        assert_eq!(dec_str("legacy plaintext"), "legacy plaintext");
+    }
+
+    #[test]
+    fn copy_log_caps_groups_and_prunes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE copy_log(ts INTEGER NOT NULL, id TEXT NOT NULL);
+             CREATE INDEX idx_copy_log_ts ON copy_log(ts);",
+        )
+        .unwrap();
+        // Cap 3: only the three newest events survive, newest-first by insertion.
+        for i in 0..5u64 {
+            db_append_copy(&conn, &CopyEntry { id: format!("p{i}"), ts: 100 + i }, 3, None).unwrap();
+        }
+        let recent: Vec<String> = db_recent_copies(&conn, 10, false).into_iter().map(|e| e.id).collect();
+        assert_eq!(recent, ["p4", "p3", "p2"]);
+        // Grouped: a repeated id collapses to one row at its most recent position.
+        db_append_copy(&conn, &CopyEntry { id: "p4".into(), ts: 200 }, 3, None).unwrap();
+        let grouped = db_recent_copies(&conn, 10, true);
+        assert_eq!(grouped[0].id, "p4");
+        assert_eq!(grouped.iter().filter(|e| e.id == "p4").count(), 1);
+        // Retention cutoff drops entries older than the window.
+        db_append_copy(&conn, &CopyEntry { id: "old".into(), ts: 50 }, 100, Some(150)).unwrap();
+        assert!(db_recent_copies(&conn, 100, false).iter().all(|e| e.id != "old"));
+        // Gapped rowids (e.g. after an age-prune) must never let the cap be exceeded.
+        conn.execute("DELETE FROM copy_log", []).unwrap();
+        for i in 0..10u64 {
+            db_append_copy(&conn, &CopyEntry { id: format!("g{i}"), ts: 0 }, 5, None).unwrap();
+        }
+        conn.execute("DELETE FROM copy_log WHERE id IN ('g7','g8')", []).unwrap();
+        for i in 10..15u64 {
+            db_append_copy(&conn, &CopyEntry { id: format!("g{i}"), ts: 0 }, 5, None).unwrap();
+        }
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM copy_log", [], |r| r.get(0)).unwrap();
+        assert!(n <= 5, "cap exceeded after gaps: {n}");
+    }
 
     fn sample_prompts() -> Vec<Prompt> {
         vec![
@@ -3605,6 +4638,7 @@ mod tests {
                 caption_size: 0,
                 font: "mono".into(),
                 font_size: 24,
+                favorite: false,
             },
             Prompt {
                 id: "p2".into(),
@@ -3620,14 +4654,9 @@ mod tests {
                 caption_size: 18,
                 font: String::new(),
                 font_size: 1,
+                favorite: false,
             },
         ]
-    }
-
-    fn sample_settings() -> Settings {
-        let mut s = Settings::default();
-        s.migrate();
-        s
     }
 
     // Settings JSON from an older version: unknown/removed fields (copy_history,
@@ -3666,7 +4695,7 @@ mod tests {
 
     #[test]
     fn txt_roundtrip_keeps_every_field() {
-        let out = to_txt(&sample_prompts(), &sample_settings());
+        let out = to_txt(&sample_prompts());
         let data = parse_txt(&out);
         assert_eq!(data.prompts.len(), 2);
         let p1 = &data.prompts[0];
@@ -3689,31 +4718,26 @@ mod tests {
 
     #[test]
     fn csv_roundtrip_keeps_every_field() {
-        let out = to_csv(&sample_prompts(), &sample_settings());
+        let out = to_csv(&sample_prompts());
         let rows = parse_csv(&out);
-        // header + @settings + @views + 2 prompts
-        assert_eq!(rows.len(), 5);
-        assert_eq!(rows[3][0], "Mail");
-        assert_eq!(rows[3][4], "mono");
-        assert_eq!(rows[3][5], "24");
-        assert_eq!(rows[3][8], "1");
-        assert_eq!(rows[3][9], "1");
-        assert_eq!(rows[3][10], "data:image/png;base64,QUJD");
-        assert_eq!(rows[4][6], "C:\\tmp\\report.pdf");
-        assert_eq!(rows[4][7], "C:\\tmp\\clip.mp4");
-        assert_eq!(rows[4][11], "Mein Untertitel");
-        assert_eq!(rows[4][12], "18");
+        // header + 2 prompts (no settings/views blocks in a prompts-only export)
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1][0], "Mail");
+        assert_eq!(rows[1][4], "mono");
+        assert_eq!(rows[1][5], "24");
+        assert_eq!(rows[1][8], "1");
+        assert_eq!(rows[1][9], "1");
+        assert_eq!(rows[1][10], "data:image/png;base64,QUJD");
+        assert_eq!(rows[2][6], "C:\\tmp\\report.pdf");
+        assert_eq!(rows[2][7], "C:\\tmp\\clip.mp4");
+        assert_eq!(rows[2][11], "Mein Untertitel");
+        assert_eq!(rows[2][12], "18");
     }
 
     #[test]
     fn csv_export_feeds_import_parser_losslessly() {
-        let mut s = sample_settings();
-        s.language = "de".into();
-        s.theme = "coffee".into();
-        let out = to_csv(&sample_prompts(), &s);
+        let out = to_csv(&sample_prompts());
         let data = parse_csv_data(&out);
-        assert_eq!(data.language.as_deref(), Some("de"));
-        assert_eq!(data.theme.as_deref(), Some("coffee"));
         assert_eq!(data.prompts.len(), 2);
         let p1 = &data.prompts[0];
         assert!(p1.show_image && p1.copy_image);
@@ -3727,26 +4751,13 @@ mod tests {
     }
 
     #[test]
-    fn settings_block_roundtrip() {
-        let mut s = sample_settings();
-        s.language = "de".into();
-        s.theme = "midnight".into();
-        s.tile_font = "georgia".into();
-        s.tile_size = 18;
-        s.minimize_to_tray = true;
-        s.auto_update = false;
-        s.show_header = false;
-        s.show_composer = true;
-        let out = to_txt(&[], &s);
-        let data = parse_txt(&out);
-        assert_eq!(data.language.as_deref(), Some("de"));
-        assert_eq!(data.theme.as_deref(), Some("midnight"));
-        assert_eq!(data.tile_font.as_deref(), Some("georgia"));
-        assert_eq!(data.tile_size, Some(18));
-        assert_eq!(data.minimize_to_tray, Some(true));
-        assert_eq!(data.auto_update, Some(false));
-        assert_eq!(data.show_header, Some(false));
-        assert_eq!(data.show_composer, Some(true));
+    fn old_export_with_settings_imports_prompts_only() {
+        // A legacy file that still carries @settings/@views must import its prompts
+        // and silently ignore the settings blocks (no panic, no bogus prompt).
+        let txt = "@settings\nlanguage=de\ntheme=midnight\n\n---\n\n@views\nv|View\n\n---\n\n### Old\nSome text";
+        let data = parse_txt(txt);
+        assert_eq!(data.prompts.len(), 1);
+        assert_eq!(data.prompts[0].name, "Old");
     }
 
     #[test]

@@ -11,17 +11,28 @@
     <div class="brand">
       <img class="logo" src="assets/icon.svg" alt="" width="26" height="26" />
       <span class="title">Prompt Saver</span>
+      <button id="fav-view-btn" class="fav-view-toggle hidden" type="button" data-i18n-title="favViewTitle" data-i18n-aria="favViewTitle">★</button>
       <nav id="views" class="views hidden"></nav>
     </div>
     <div class="header-actions">
       <!-- Quick grid-size control for the active view -->
       <div id="quick-grid" class="quick-grid" data-i18n-title="gridSize">
         <input id="qg-cols" class="grid-mini" type="number" min="1" max="20" data-i18n-aria="gridSize" />
-        <span class="times">×</span>
+        <span class="times" aria-hidden="true"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M7 7l10 10M17 7 7 17"/></svg></span>
         <input id="qg-rows" class="grid-mini" type="number" min="1" max="20" data-i18n-aria="gridSize" />
       </div>
       <span class="header-sep" aria-hidden="true"></span>
-      <!-- Content actions: library · history -->
+      <!-- Content actions: chain · library · history -->
+      <button id="chain-btn" class="icon-btn chain-toggle" type="button" aria-pressed="false" data-i18n-title="chainTooltip" data-i18n-aria="chainTooltip">
+        <!-- Off: broken link (bar split). Active: joined link (solid bar). First click
+             outlines the button, second click fills it with the accent colour. -->
+        <svg class="chain-icon chain-open" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <path transform="rotate(-45 12 12)" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h1.6M14.4 12H16"/>
+        </svg>
+        <svg class="chain-icon chain-closed" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <path transform="rotate(-45 12 12)" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/>
+        </svg>
+      </button>
       <button id="library-btn" class="icon-btn" data-i18n-title="library" data-i18n-aria="library">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path fill="currentColor" d="M4 6h2v2H4V6Zm4 0h12v2H8V6ZM4 11h2v2H4v-2Zm4 0h12v2H8v-2ZM4 16h2v2H4v-2Zm4 0h12v2H8v-2Z"/>
@@ -92,7 +103,10 @@
   <!-- Name / edit modal -->
   <div id="modal" class="overlay hidden" role="dialog" aria-modal="true">
     <div class="modal">
-      <h2 id="modal-title" class="modal-title">Name this prompt</h2>
+      <div class="modal-titlebar">
+        <h2 id="modal-title" class="modal-title">Name this prompt</h2>
+        <button type="button" id="modal-fav" class="modal-fav-star" aria-pressed="false" data-i18n-title="favoriteToggle" data-i18n-aria="favoriteToggle">★</button>
+      </div>
       <input id="modal-name" class="modal-input" type="text" data-i18n-ph="namePh" maxlength="80" />
       <!-- Image preview + display toggle (visible only when prompt has an image) -->
       <div id="modal-img-wrap" class="modal-img-wrap hidden">
@@ -124,7 +138,7 @@
       </div>
       <p id="modal-file-hint" class="modal-hint hidden" data-i18n="fileHint">Only the file path is saved.</p>
       <div id="modal-text-bar" class="modal-text-bar hidden">
-        <p id="modal-vars-hint" class="modal-hint modal-vars-hint hidden" data-i18n="varsHint">Tip: {{VariableName}} is asked when copying.</p>
+        <p id="modal-vars-hint" class="modal-hint modal-vars-hint hidden" data-i18n="varsHint">Tip: {#{VariableName}#} is asked when copying.</p>
       </div>
       <textarea id="modal-text" class="modal-input modal-text hidden" rows="6" data-i18n-ph="promptPh"></textarea>
       <!-- Per-tile font/size overrides (create + edit) -->
@@ -149,7 +163,7 @@
     </div>
   </div>
 
-  <!-- Fill-in dialog for {{placeholders}} when copying a prompt -->
+  <!-- Fill-in dialog for {#{placeholders}#} when copying a prompt -->
   <div id="vars-modal" class="overlay hidden" role="dialog" aria-modal="true">
     <div class="modal modal-narrow">
       <h2 id="vars-title" class="modal-title">Fill in</h2>
@@ -167,6 +181,10 @@
       <div class="modal-head">
         <h2 class="modal-title" data-i18n="library">All prompts</h2>
         <div class="modal-head-actions">
+          <div class="cols-control">
+            <span class="cols-label" data-i18n="libraryColumns">Columns</span>
+            <div id="lib-cols-seg" class="seg-toggle" role="group" data-i18n-aria="libraryColumns"></div>
+          </div>
           <button id="library-close-toggle" type="button" class="head-toggle" aria-pressed="true" data-i18n="closeAfterCopy">Close after copy</button>
           <button id="library-close" class="icon-btn" data-i18n-aria="close">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -183,6 +201,7 @@
           <button type="button" class="lib-type" data-type="video" data-i18n="filterVideo">Video</button>
           <button type="button" class="lib-type" data-type="pdf" data-i18n="filterPdf">PDF</button>
           <button type="button" class="lib-type" data-type="file" data-i18n="filterFile">File</button>
+          <button id="library-fav" type="button" class="lib-type lib-fav-chip" data-i18n-title="favoritesOnly" data-i18n-aria="favoritesOnly">★</button>
         </div>
         <div id="library-colors" class="lib-colors" data-i18n-title="filterColor"></div>
       </div>
@@ -195,16 +214,29 @@
     <div class="modal">
       <div class="modal-head">
         <h2 class="modal-title" data-i18n="journal">Copy history</h2>
-        <button id="journal-close" class="icon-btn" data-i18n-aria="close">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path fill="currentColor" d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z"/>
-          </svg>
-        </button>
+        <div class="modal-head-actions">
+          <button id="journal-clear" type="button" class="head-toggle head-clear" data-i18n="clearHistory">Clear history</button>
+          <button id="journal-close" class="icon-btn" data-i18n-aria="close">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="journal-search" class="library-search">
+        <input id="journal-q" class="modal-input" type="text" data-i18n-ph="searchPh" data-i18n-aria="searchPh" />
+        <div class="journal-filters">
+          <div id="journal-types" class="lib-types">
+            <button type="button" class="lib-type active" data-type="all" data-i18n="filterAll">All</button>
+            <button type="button" class="lib-type" data-type="image" data-i18n="filterImage">Image</button>
+            <button type="button" class="lib-type" data-type="video" data-i18n="filterVideo">Video</button>
+            <button type="button" class="lib-type" data-type="pdf" data-i18n="filterPdf">PDF</button>
+            <button type="button" class="lib-type" data-type="file" data-i18n="filterFile">File</button>
+          </div>
+          <div id="journal-colors" class="lib-colors" data-i18n-title="filterColor"></div>
+        </div>
       </div>
       <div id="journal-body" class="journal-body"></div>
-      <div class="modal-actions">
-        <button id="journal-clear" class="ghost-btn danger-btn" data-i18n="clearHistory">Clear history</button>
-      </div>
     </div>
   </div>
 
@@ -287,10 +319,20 @@
         </label>
       </div>
       <div class="field">
-        <span data-i18n="viewsLabel">Views (max 20)</span>
+        <div class="views-head">
+          <span data-i18n="viewsLabel">Views</span>
+          <label class="favview-toggle" data-i18n-title="favViewOption" data-i18n-aria="favViewOption">
+            <span data-i18n="favViewTitle">Favorites view</span>
+            <input id="opt-favview" type="checkbox" class="switch" />
+          </label>
+        </div>
         <div id="views-editor" class="views-editor"></div>
         <button id="view-add" class="ghost-btn" data-i18n="addView">+ Add view</button>
       </div>
+      <label class="field switch-field">
+        <span data-i18n="alwaysOnTop">Always on top</span>
+        <input id="opt-ontop" type="checkbox" class="switch" />
+      </label>
       <label class="field switch-field">
         <span data-i18n="minimizeOnClose">Minimize to background on close</span>
         <input id="opt-minimize" type="checkbox" class="switch" />
@@ -304,18 +346,30 @@
         <input id="opt-startmin" type="checkbox" class="switch" />
       </label>
       <label class="field switch-field">
-        <span data-i18n="alwaysOnTop">Always on top</span>
-        <input id="opt-ontop" type="checkbox" class="switch" />
+        <span data-i18n="screenshotToFolder">Always save screenshots to the Screenshots folder</span>
+        <input id="opt-screenshot-folder" type="checkbox" class="switch" />
       </label>
       <div class="field">
+        <span data-i18n="hotkeyLabel">Global hotkey (opens the Prompt list)</span>
+        <div class="hotkey-row">
+          <input id="opt-hotkey" class="modal-input" type="text" readonly data-i18n-ph="hotkeyPh" data-i18n-aria="hotkeyLabel" />
+          <button id="hotkey-clear" class="ghost-btn" data-i18n="hotkeyClear">Clear</button>
+        </div>
+      </div>
+      <div id="impexp-field" class="field">
         <span data-i18n="importExport">Import / export prompts</span>
         <div class="export-row">
           <button id="import-btn" class="ghost-btn" data-i18n="import">Import</button>
           <button id="export-csv" class="ghost-btn" data-i18n="exportCsv">CSV export</button>
           <button id="export-txt" class="ghost-btn" data-i18n="exportTxt">TXT export</button>
         </div>
+        <span class="impexp-sub" data-i18n="importExportAll">Backup everything (settings & prompts)</span>
+        <div class="export-row">
+          <button id="import-all" class="ghost-btn" data-i18n="importAll">Import all</button>
+          <button id="export-all" class="ghost-btn" data-i18n="exportAll">Export all</button>
+        </div>
       </div>
-      <div class="field">
+      <div id="updates-field" class="field">
         <span data-i18n="updates">Updates</span>
         <div class="update-row">
           <span id="update-status" class="update-status"></span>
@@ -338,7 +392,9 @@
           <p class="expert-hint" data-i18n="expertHint">Changing these can cause unexpected behaviour.</p>
           <button id="expert-reset" class="ghost-btn danger-btn" data-i18n="expertReset">Reset expert menu</button>
         </div>
-        <!-- Tabs + rows are built by JS from a single catalog. -->
+        <input id="expert-search" class="modal-input" type="text" data-i18n-ph="expertSearchPh" data-i18n-aria="expertSearchPh" />
+        <!-- Tab bar stays fixed; only the rows below scroll. Both built by JS. -->
+        <div id="expert-tabs-bar"></div>
         <div id="expert-flags"></div>
       </div>
     </div>
@@ -405,9 +461,13 @@
         <span data-i18n="snipSaveCopied">Screenshot copied to clipboard.</span>
         <span data-i18n="snipSaveKeep">Keep it as a button?</span>
       </p>
+      <label class="field switch-field snip-folder-field">
+        <span data-i18n="screenshotToFolder">Save screenshots to the Screenshots folder</span>
+        <input id="snip-save-folder" type="checkbox" class="switch" />
+      </label>
       <div class="modal-actions">
         <button id="snip-modal-retry" class="ghost-btn" data-i18n="snipRetry">New screenshot</button>
-        <button id="snip-modal-no" class="ghost-btn" data-i18n="snipClipOnly">Only to clipboard</button>
+        <button id="snip-modal-saveas" class="ghost-btn" data-i18n="screenshotSaveAs">Save as…</button>
         <button id="snip-modal-yes" class="primary-btn" data-i18n="snipKeepBtn">Save as button</button>
       </div>
     </div>
@@ -431,6 +491,19 @@
     <button data-act="hide" role="menuitem" data-i18n="hideInView">Hide in this view</button>
     <button data-act="pin" role="menuitem" data-i18n="toggleFloating">Toggle floating button</button>
     <button data-act="delete" role="menuitem" class="danger" data-i18n="delete">Delete</button>
+  </div>
+
+  <!-- Fullscreen media viewer (in-window): click any preview to zoom + pan -->
+  <div id="lightbox" class="overlay hidden" role="dialog" aria-modal="true">
+    <button id="lightbox-close" class="icon-btn lightbox-close" data-i18n-aria="close">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path fill="currentColor" d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z"/>
+      </svg>
+    </button>
+    <div id="lightbox-stage" class="lightbox-stage">
+      <img id="lightbox-img" class="lightbox-media hidden" alt="" draggable="false" />
+      <video id="lightbox-video" class="lightbox-media hidden" controls loop playsinline></video>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

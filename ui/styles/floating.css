@@ -207,9 +207,13 @@ html, body {
 
 .label, .feedback {
   white-space: nowrap;
-  max-width: 100%;
   transition: opacity var(--transition);
 }
+/* The label must size to its OWN content (no max-width clamp): the window width is
+   derived from label.scrollWidth, so clamping it to the window creates a feedback
+   loop that, when shrinking, drives the window below the text and clips it. */
+.label { max-width: none; }
+.feedback { max-width: 100%; }
 /* Never clip glyphs vertically (script fonts have huge descenders); the
    window itself bounds overlong text, the width tracks the label anyway. */
 .label { overflow: visible; }
@@ -244,6 +248,7 @@ html, body {
   text-align: center;
   white-space: normal;
   overflow-wrap: break-word;
+  overflow: hidden; /* keep the message inside the rounded pill, never paint outside */
 }
 .pill.file-missing .file-error { display: flex; }
 .pill.has-image .file-error { border-radius: 10px; }
@@ -264,8 +269,10 @@ body.menu-open .pill { flex: 0 0 auto; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 100%;
-  max-width: 230px; /* matches the backend menu width */
+  /* Fixed width (matches the backend menu width). NOT width:100% — the menu is
+     measured (offsetWidth) while the window is still the pill's size, so on a tiny
+     pill a 100%-width menu would measure ~pill-wide and clip its own labels. */
+  width: 230px;
   height: auto; /* leftover window space stays transparent */
   padding: 8px;
   border-radius: 14px;
@@ -326,17 +333,20 @@ body.menu-open .pill { flex: 0 0 auto; }
    Above the menu (z 10) so the edges/corners on the menu's side stay grabbable;
    the 7px strips sit within the menu's 8px padding, so its buttons stay clickable
    (grabbing a grip collapses the menu and resizes the pill). */
-.resize { position: fixed; inset: 0; z-index: 11; pointer-events: none; }
-.resize .rz { position: absolute; pointer-events: auto; }
+/* Stadium-shaped resize ring that hugs the pill outline at ANY size — so the resize
+   hitbox sits exactly on the rounded edge instead of drifting out to the bounding
+   rectangle's corners as the pill grows. rz-catch is the full pill shape; rz-hole
+   (a smaller pill, on top) punches out the centre, leaving only the --rz-wide edge
+   ring to resize — the centre and the transparent corners stay draggable. --rz is
+   set from JS in proportion to the pill; the radius matches the pill (a pill for
+   text, 10px for media). */
+.resize { position: fixed; inset: 0; z-index: 11; pointer-events: none; --rz: 12px; }
 .pill.dragging ~ .resize { display: none; }
-.rz-n { top: 0; left: 12px; right: 12px; height: 7px; cursor: ns-resize; }
-.rz-s { bottom: 0; left: 12px; right: 12px; height: 7px; cursor: ns-resize; }
-.rz-e { right: 0; top: 12px; bottom: 12px; width: 7px; cursor: ew-resize; }
-.rz-w { left: 0; top: 12px; bottom: 12px; width: 7px; cursor: ew-resize; }
-.rz-ne { top: 0; right: 0; width: 14px; height: 14px; cursor: nesw-resize; }
-.rz-nw { top: 0; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }
-.rz-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; }
-.rz-sw { bottom: 0; left: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+.rz-catch, .rz-hole { position: absolute; pointer-events: auto; border-radius: 999px; }
+.rz-catch { inset: 0; cursor: nwse-resize; }
+.rz-hole { inset: var(--rz); cursor: grab; }
+.pill.has-image ~ .resize .rz-catch,
+.pill.has-image ~ .resize .rz-hole { border-radius: 10px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

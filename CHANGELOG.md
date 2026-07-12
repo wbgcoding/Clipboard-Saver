@@ -3,6 +3,17 @@
 All notable changes to **Clipboard-Saver**. Download the latest version from the
 [releases page](../../releases/latest).
 
+## 2.4.1 (2026-07-11)
+
+### Improved
+- The **update notification** is now a clearer, more prominent card — an icon,
+  the new version, and a one-click **Install now** button — while still matching
+  your chosen theme.
+
+### Fixed
+- The scrollbar in the update changelog now looks exactly like every other
+  scrollbar in the app.
+
 ## 2.4.0 (2026-07-11)
 
 A polish release: a full-screen viewer for your images and videos, cleaner

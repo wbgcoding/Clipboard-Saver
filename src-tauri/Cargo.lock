@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-saver"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "arboard",
  "clipboard-win",

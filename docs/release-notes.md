@@ -1,15 +1,9 @@
 ## Prompt Saver 2.6.3
 
-A follow-up to 2.6.2 that finishes the backups window: automatic backups can be
-switched off and keep running while the app is open, retention gained a yearly
-tier, and the page was rebuilt in two columns. The statistics were trimmed to the
-numbers that actually say something, and fourteen tooltips finally describe the
-setting they sit on.
-
-Coming from 2.4.1? This build also brings everything from 2.5.0 and 2.6.2: a custom
-title bar, version history per prompt, batch editing and favorites in the library, a
-duplicate finder, fuzzy search, smart sorting, auto-paste, the clipboard inbox, and
-encrypted, compressed backups.
+The backups window is finished: automatic backups can be switched off and keep
+running while the app is open, retention gained a yearly tier, and the page was
+rebuilt in two columns. The statistics were trimmed to the numbers that actually
+say something, and fourteen tooltips finally describe the setting they sit on.
 
 ### Downloads
 

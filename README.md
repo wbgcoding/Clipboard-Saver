@@ -96,7 +96,7 @@ From the [latest release](../../releases/latest):
 
 | File | What it is |
 |---|---|
-| `Prompt.Saver_x64-setup.exe` | **Installer** — all users or current user only, optional desktop / start-menu shortcuts, upgrades keep your data |
+| `Prompt.Saver_<version>_x64-setup.exe` | **Installer** — all users or current user only, optional desktop / start-menu shortcuts, upgrades keep your data |
 | `prompt-saver.exe` | **Portable** — one standalone exe, no installation, keeps its data next to itself |
 
 Both need the Microsoft WebView2 runtime (preinstalled on Windows 11 and current Windows 10; the app offers Microsoft's installer if it is missing).
@@ -121,6 +121,10 @@ Full version history: [CHANGELOG.md](CHANGELOG.md)
 ## Building from source
 
 Requirements: [Node.js](https://nodejs.org), [Rust](https://rustup.rs) (MSVC toolchain).
+
+PDF previews are rendered by PDFium, which is compiled into the exe. Download
+`pdfium.dll` (x64) from [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries/releases)
+and put it in `src-tauri/` before building — the build fails without it.
 
 ```bat
 build.bat

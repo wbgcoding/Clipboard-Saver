@@ -140,6 +140,107 @@ PROBE = """
       if (fld && fld.getBoundingClientRect().right > row.getBoundingClientRect().right + 1) {
         out.errors.push('the top-list length field overflows its row');
       }
+      // Two-column settings, 8 diagnostic cards, 12 statistic cards, overview split.
+      if (document.querySelectorAll('#backup-panel .backup-col').length !== 2) {
+        out.errors.push('the backup settings are not split in two columns');
+      }
+      if (document.querySelectorAll('#backup-panel .stat-cards .stat-card').length !== 8) {
+        out.errors.push('the backup diagnostics do not show 8 cards');
+      }
+      if (document.querySelectorAll('#stats-panel .stat-cards .stat-card').length !== 12) {
+        out.errors.push('the usage statistics do not show 12 cards');
+      }
+      if (!document.querySelector('#stats-panel .stat-overview-split')) {
+        out.errors.push('the overview is not split from the per-view list');
+      }
+      // A stored password shows as dots — as a placeholder, never as a value.
+      const pw = document.querySelector('#backup-panel .backup-pw-wrap .modal-input');
+      if (!pw || pw.type !== 'password' || pw.value !== '' || !/^•+$/.test(pw.placeholder)) {
+        out.errors.push('a stored backup password is not shown as empty dots');
+      }
+      // Smart retention swaps the keep count for the 2x2 day/week/month/year grid.
+      // The panel re-renders on every toggle, so the switch has to be looked up again.
+      const gfsSwitch = () => [...document.querySelectorAll('#backup-panel input.switch')].pop();
+      if (gfsSwitch()) {
+        gfsSwitch().click();
+        await sleep(400);
+        const tiers = document.querySelectorAll('#backup-panel .backup-tier-grid .modal-input');
+        if (tiers.length !== 4) out.errors.push('smart retention does not show 4 tier fields');
+        gfsSwitch().click();
+        await sleep(400);
+      }
+    }
+    // Clearing a number field with its X and leaving it must land on the default,
+    // not on the field minimum.
+    const keepInput = document.querySelector('#backup-panel .backup-set-row input[type=number]');
+    const keepClear = keepInput && keepInput.parentElement.querySelector('.clear-btn');
+    if (!keepInput || !keepClear) {
+      out.errors.push('the keep-count field has no clear button');
+    } else {
+      keepClear.click();
+      await sleep(150);
+      keepInput.dispatchEvent(new Event('blur'));
+      await sleep(300);
+      if (keepInput.value !== '10') out.errors.push('clearing the keep count gives ' + keepInput.value + ' instead of the default 10');
+      // The X hides itself while the field is empty; once the default is written
+      // back it has to reappear, or the field can never be cleared a second time.
+      if (!keepClear.classList.contains('show')) out.errors.push('the clear button stays hidden after the field refilled itself');
+    }
+    // The X is positioned against its wrapper, so a field narrower than the wrapper
+    // pushes it outside the box it belongs to.
+    for (const w of document.querySelectorAll('#backup-modal .clear-wrap')) {
+      const inp = w.querySelector('input');
+      if (!inp) continue;
+      const ir = inp.getBoundingClientRect(), br = w.querySelector('.clear-btn').getBoundingClientRect();
+      if (ir.width && br.width && (br.right > ir.right || br.left < ir.left)) {
+        out.errors.push('the clear button sits outside its field (' + (inp.name || inp.type) + ')');
+      }
+    }
+    // Save on an empty field must do nothing at all, and removing a stored password
+    // must ask first — it puts new backups back on the built-in key.
+    const pwSave = document.querySelector('#backup-panel .backup-pw-save');
+    const pwRemove = document.querySelector('#backup-panel .backup-pw-remove');
+    const confirmEl = document.getElementById('confirm-modal');
+    if (!pwSave || !pwRemove) {
+      out.errors.push('backup password row is missing its save or remove button');
+    } else {
+      if (pwRemove.classList.contains('hidden')) out.errors.push('no remove button although a password is set');
+      // A confirm dialog left over from the take-over check would fake a hit below.
+      confirmEl.classList.add('hidden');
+      pwSave.click();
+      await sleep(300);
+      if (!confirmEl.classList.contains('hidden')) {
+        out.errors.push('Save on an empty password field starts a destructive action');
+        document.getElementById('confirm-cancel').click();
+        await sleep(200);
+      }
+      pwRemove.click();
+      await sleep(300);
+      if (confirmEl.classList.contains('hidden')) {
+        out.errors.push('removing the backup password does not ask for confirmation');
+      } else {
+        document.getElementById('confirm-cancel').click();
+        await sleep(200);
+      }
+    }
+    // A cleanup candidate opens the library IN FRONT of the backups dialog, which
+    // stays open so it can be returned to.
+    const cand = document.querySelector('#stats-panel .stat-cleanup-item');
+    if (!cand) {
+      out.errors.push('the statistics list no cleanup candidates');
+    } else {
+      cand.click();
+      await sleep(500);
+      const lib = document.getElementById('library');
+      if (lib.classList.contains('hidden')) out.errors.push('a cleanup candidate does not open the library');
+      if (bm.classList.contains('hidden')) out.errors.push('the backups dialog was closed instead of stepped in front of');
+      if (Number(getComputedStyle(lib).zIndex) <= Number(getComputedStyle(bm).zIndex)) {
+        out.errors.push('the library opens behind the backups dialog');
+      }
+      document.getElementById('library-close').click();
+      await sleep(300);
+      if (document.body.classList.contains('library-front')) out.errors.push('the raised-library state outlives the library');
+      if (bm.classList.contains('hidden')) out.errors.push('there is no backups dialog left to jump back to');
     }
     await click('backup-close');
     // Restoring a password-protected backup: the prompt must appear, reject a wrong

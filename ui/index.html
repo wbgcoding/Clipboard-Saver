@@ -276,7 +276,7 @@
   <div id="backup-modal" class="overlay hidden" role="dialog" aria-modal="true">
     <div class="modal">
       <div class="modal-head">
-        <h2 class="modal-title" data-i18n="expGroupBackup">Backups</h2>
+        <h2 class="modal-title" data-i18n="settingsBackupBtn">Backup manager</h2>
         <button id="backup-close" class="icon-btn" data-i18n-aria="close">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path fill="currentColor" d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4Z"/>
@@ -515,19 +515,22 @@
           <button id="export-txt" class="ghost-btn" data-i18n="exportTxt">TXT export</button>
         </div>
         <div class="export-row">
+          <button id="settings-backup-btn" class="ghost-btn" data-i18n="settingsBackupBtn" data-i18n-title="tipSettingsBackup">Backup manager</button>
           <button id="export-all" class="ghost-btn" data-i18n="backupSave">Save backup</button>
           <button id="import-all" class="ghost-btn" data-i18n="backupImport">Import backup</button>
         </div>
       </div>
+      <!-- Two columns like the toggle grid above: check + version left, switch right. -->
       <div id="updates-field" class="field">
         <div class="update-row">
-          <label class="auto-update" data-i18n-title="autoUpdateHint">
+          <div class="update-actions">
+            <button id="update-btn" class="ghost-btn" data-i18n="checkUpdate">Check for updates</button>
+            <button id="update-version" type="button" class="update-version" data-i18n-title="openReleases"></button>
+          </div>
+          <label class="field switch-field" data-i18n-title="autoUpdateHint">
             <span data-i18n="autoUpdate">Auto update</span>
             <input id="opt-autoupdate" type="checkbox" class="switch" />
           </label>
-          <button id="update-btn" class="ghost-btn" data-i18n="checkUpdate">Check for updates</button>
-          <button id="update-version" type="button" class="update-version" data-i18n-title="openReleases"></button>
-          <button id="settings-backup-btn" class="ghost-btn update-backup-btn" data-i18n="settingsBackupBtn" data-i18n-title="tipSettingsBackup">Backups</button>
         </div>
       </div>
       <div class="field settings-btn-row">

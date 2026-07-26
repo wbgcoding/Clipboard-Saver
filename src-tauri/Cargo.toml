@@ -1,6 +1,6 @@
 [package]
 name = "prompt-saver"
-version = "2.6.2"
+version = "2.6.3"
 description = "Local offline prompt manager"
 authors = ["BG Coding"]
 edition = "2021"
@@ -64,6 +64,10 @@ codegen-units = 16
 # NOTE: unwind (not "abort") so a single command panic rejects the call
 # instead of hard-crashing the whole app. Robustness > a few KB of size.
 strip = true
+# NOTE: the shipped exe must not carry the paths of the machine it was built on.
+# `strip` drops the debug info, but panic locations from dependencies stay in the
+# binary as literals — build.bat remaps them via RUSTFLAGS (profile.trim-paths is
+# still nightly-only).
 # Incremental is OFF on purpose: its codegen cache added ~2.8 GB to target/ for only
 # a few seconds off repeat builds. Deps still stay compiled in target/release/deps
 # (cached, never re-downloaded), so only this one crate recompiles per change.

@@ -1,37 +1,39 @@
-## Prompt Saver 2.6.2
+## Prompt Saver 2.6.3
 
-Backups get their own window, their own encryption and a lot less disk space. The
-expert menu was re-sorted from scratch, the portable version is now a single file,
-and a long list of rough edges is gone.
+A follow-up to 2.6.2 that finishes the backups window: automatic backups can be
+switched off and keep running while the app is open, retention gained a yearly
+tier, and the page was rebuilt in two columns. The statistics were trimmed to the
+numbers that actually say something, and fourteen tooltips finally describe the
+setting they sit on.
 
-Coming from 2.4.1? This build also brings everything from 2.5.0: a custom title bar,
-version history per prompt, batch editing and favorites in the library, a duplicate
-finder, fuzzy search, smart sorting, auto-paste and the clipboard inbox.
+Coming from 2.4.1? This build also brings everything from 2.5.0 and 2.6.2: a custom
+title bar, version history per prompt, batch editing and favorites in the library, a
+duplicate finder, fuzzy search, smart sorting, auto-paste, the clipboard inbox, and
+encrypted, compressed backups.
 
 ### Downloads
 
 | File | Use it when |
 |---|---|
-| `Prompt.Saver_2.6.2_x64-setup.exe` | Installer — choose **all users** or **current user only**; upgrades replace the previous version automatically, your data is kept |
+| `Prompt.Saver_2.6.3_x64-setup.exe` | Installer — choose **all users** or **current user only**; upgrades replace the previous version automatically, your data is kept |
 | `prompt-saver.exe` | Portable standalone version — one file, no installation, keeps its data next to itself |
 
 Requires the Microsoft WebView2 runtime (preinstalled on Windows 11 and current Windows 10). If it is missing, the app offers the official Microsoft installer on first start.
 
 ### Highlights
 
-- **Backups window** — the Backups button in the settings opens a page of its own: interval and retention, diagnostics, the restore list and the usage statistics.
-- **Encrypted, compressed backups** — exports are AES-256-GCM encrypted and take a fraction of the space they used to. An optional password protects new backups; older backups keep whatever protected them and still restore.
-- **Single-file portable version** — the PDF preview library is built into the exe, so nothing has to travel next to it. Starting it beside an existing installation offers to take those prompts along.
-- **Installer runs through in one pass** — choosing "for all users" no longer makes it restart itself halfway through.
-- **Expert menu re-sorted** — clearer groups, and 77 settings whose name alone does not explain them now carry a tooltip, in all 20 languages.
-- **Split reset buttons** — delete the data or reset the settings, not both at once, optionally with a safety backup first.
+- **Automatic backups have an off switch** — and they keep running while the app is open instead of only at launch, so a changed interval takes effect straight away.
+- **Yearly retention** — smart retention keeps a number of backups per day, week, month **and** year.
+- **Backups window in two columns** — taking a backup, the schedule and the password on the left, retention on the right. The button in the settings is now called **Backup manager** and sits with the other backup buttons.
+- **Remove password** is its own button with a confirmation, so Save can never drop the backup password by accident. A stored password shows as dots.
+- **Leaner numbers** — backup diagnostics down to the eight figures that matter, usage statistics down to twelve in three rows, with the overview and the per-view breakdown side by side.
 
 ### Fixed
 
-- The version history in the editor is reachable on small windows and only as tall as its contents.
-- No more flicker when changing a setting, taking a backup or collapsing a category.
-- Resetting the settings no longer discards the backup password.
-- Prompts with variables follow the same copy/paste rule as every other prompt.
-- The window buttons no longer show tooltips; close no longer turns red on hover.
+- Fourteen tooltips described the wrong thing and were rewritten in all 20 languages.
+- "Never used" now means never used, instead of "not used this month".
+- Switching smart retention on no longer overwrites the plain keep count.
+- The clear button in the backup number fields sat beside the field instead of inside it, and stayed gone once used.
+- A backup password you are still typing survives changing another setting on the same page.
 
 The complete list is in the [changelog](../../blob/master/CHANGELOG.md).

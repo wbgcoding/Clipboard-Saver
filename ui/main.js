@@ -733,7 +733,7 @@ const FLAG_LABELS = {
   fuzzySearch: "flagFuzzySearch",       // F18
   batchOps: "flagBatchOps",             // F8
   promptHistory: "flagPromptHistory",   // F7
-  usageStats: "flagUsageStats",         // F11
+  usageStats: "statsEnable",            // F11 — only ever rendered in the backups dialog
   dupFinder: "flagDupFinder",           // F6
   dupImportCheck: "flagDupImportCheck", // F6
   autoBackup: "flagAutoBackup",         // F2
@@ -892,10 +892,11 @@ const EXPERT_VALUES = {
   dupThreshold: { label: "valDupThreshold", min: 70, max: 100, step: 1, def: 90, unit: "%", gate: "dupFinder" },
   // F2 automatic backups: how many rotating snapshots to keep.
   backupKeep: { label: "valBackupKeep", min: 1, max: 50, step: 1, def: 10, unit: "", gate: "autoBackup" },
-  // F2 GFS retention tiers (kept per distinct day / week / month).
+  // F2 GFS retention tiers (kept per distinct day / week / month / year).
   backupDaily: { label: "valBackupDaily", min: 0, max: 30, step: 1, def: 3, unit: "", gate: "backupGfs" },
   backupWeekly: { label: "valBackupWeekly", min: 0, max: 52, step: 1, def: 4, unit: "", gate: "backupGfs" },
-  backupMonthly: { label: "valBackupMonthly", min: 0, max: 60, step: 1, def: 12, unit: "", gate: "backupGfs" },
+  backupMonthly: { label: "valBackupMonthly", min: 0, max: 60, step: 1, def: 6, unit: "", gate: "backupGfs" },
+  backupYearly: { label: "valBackupYearly", min: 0, max: 20, step: 1, def: 1, unit: "", gate: "backupGfs" },
   // F19 auto-paste: SetForeground→Ctrl+V delay + double-click window.
   autoPasteDelayMs: { label: "valAutoPasteDelay", min: 30, max: 300, step: 10, def: 80, unit: "ms", gate: "autoPaste" },
   dblClickMs: { label: "valDblClick", min: 200, max: 600, step: 20, def: 400, unit: "ms", gate: "autoPaste" },
@@ -2638,8 +2639,12 @@ window.addEventListener("pointermove", (e) => {
     drag.moved = true;
     drag.el.classList.add("dragging");
     document.body.classList.add("drag-active");
-    // Dragging out of the library: hide the overlay so the grid is visible.
-    if (drag.fromLibrary) libraryEl.classList.add("hidden");
+    // Dragging out of the library: hide the overlay so the grid is visible — and
+    // anything the library was raised over, or the grid stays covered.
+    if (drag.fromLibrary) {
+      libraryEl.classList.add("hidden");
+      dropLibraryFront(true);
+    }
     // Live ghost: a clone of the tile follows the cursor.
     const r = drag.el.getBoundingClientRect();
     drag.offX = drag.startX - r.left;
@@ -3350,6 +3355,30 @@ function statSection(text) {
   h.textContent = text;
   return h;
 }
+// Label + bounded number field, as used by the backup and statistics panels.
+// Clearing the field means "back to the default" — it is committed on blur, so
+// an empty field mid-typing is left alone.
+function numRow(labelKey, key, min, max, onSet, extraClass) {
+  const l = document.createElement("label");
+  l.className = "field backup-set-row" + (extraClass ? " " + extraClass : "");
+  const s = document.createElement("span"); s.textContent = t(labelKey);
+  const i = document.createElement("input");
+  i.type = "number"; i.min = min; i.max = max; i.className = "modal-input"; i.value = String(val(key));
+  const def = EXPERT_VALUES[key]?.def ?? min;
+  const commit = async (raw) => {
+    const v = raw === "" ? def : Math.max(min, Math.min(max, Number(raw) || def));
+    i.value = String(v);
+    // The clear-X wipes the field programmatically, so only an `input` event
+    // brings it back once the default has been written into the field again.
+    i.dispatchEvent(new Event("input", { bubbles: true }));
+    await onSet(v);
+  };
+  i.addEventListener("change", () => commit(i.value.trim()));
+  i.addEventListener("blur", () => { if (i.value.trim() === "") commit(""); });
+  l.append(s, i);
+  return l;
+}
+
 async function renderStatsPanel(body) {
   // Feature toggle + (when on) the top-N field share one row.
   const on = flag("usageStats");
@@ -3363,17 +3392,16 @@ async function renderStatsPanel(body) {
   body.innerHTML = "";
   const headRow = document.createElement("div"); headRow.className = "stats-head-row";
   const sw = document.createElement("label"); sw.className = "field switch-field";
-  const swl = document.createElement("span"); swl.textContent = t("flagUsageStats");
+  const swl = document.createElement("span"); swl.textContent = t("statsEnable");
   const swi = document.createElement("input"); swi.type = "checkbox"; swi.className = "switch"; swi.checked = on;
   swi.addEventListener("change", async () => { await saveBackupSetting("flag", "usageStats", swi.checked); renderStatsPanel(body); });
-  sw.append(swl, swi); headRow.appendChild(sw);
+  sw.append(swl, swi); headRow.appendChild(withTip(sw, "usageStats"));
   if (on) {
     // Top-N param (how many prompts the "most used" chart lists), right of the toggle.
-    const topRow = document.createElement("label"); topRow.className = "field backup-set-row stats-topn-row";
-    const trl = document.createElement("span"); trl.textContent = t("valStatsTopN");
-    const tri = document.createElement("input"); tri.type = "number"; tri.min = 5; tri.max = 100; tri.className = "modal-input"; tri.value = String(val("statsTopN"));
-    tri.addEventListener("change", async () => { const v = Math.max(5, Math.min(100, Number(tri.value) || 10)); tri.value = String(v); await saveBackupSetting("value", "statsTopN", v); renderStatsPanel(body); });
-    topRow.append(trl, tri); headRow.appendChild(topRow);
+    headRow.appendChild(numRow("valStatsTopN", "statsTopN", 5, 100, async (v) => {
+      await saveBackupSetting("value", "statsTopN", v);
+      renderStatsPanel(body);
+    }, "stats-topn-row"));
   }
   body.appendChild(headRow);
   if (!on) return;
@@ -3386,17 +3414,17 @@ async function renderStatsPanel(body) {
     const l = document.createElement("div"); l.className = "stat-label"; l.textContent = label;
     c.append(v, l); return c;
   };
-  // Four rows of four, each row one topic: what you have, what is in it, how much
-  // it gets used, and what that says about the collection.
+  // Three rows of four: what the library holds, how long/heavily used the prompts
+  // are, and the raw copy activity.
   cards.append(
     // — Inventory —
     card(t("statTotalPrompts"), nf(s.total_prompts)),
-    card(t("statViews"), nf((settings.views || []).length)),
-    card(t("statFavorites"), nf(s.favorites)),
-    card(t("statColored"), nf(s.colored)),
-    // — Content —
     card(t("statWithMedia"), nf(prompts.filter((p) => p.image || p.file_path || p.copy_image).length)),
     card(t("statWithVars"), nf(prompts.filter((p) => extractVars(p.text || "").length > 0).length)),
+    card(t("statViews"), nf((settings.views || []).length)),
+    // — Content + intensity —
+    card(t("statTopCopies"), s.top && s.top.length ? nf(s.top[0].count) : "—"),
+    card(t("statAvg"), s.used_count ? s.avg_copies.toFixed(1) : "—"),
     card(t("statChars"), nf(s.total_chars)),
     card(t("statAvgLen"), s.total_prompts ? nf(Math.round(s.total_chars / s.total_prompts)) : "—"),
     // — Copy activity —
@@ -3404,25 +3432,41 @@ async function renderStatsPanel(body) {
     card(t("statCopies7"), s.history_on ? nf(s.copies7) : "—"),
     card(t("statCopies30"), s.history_on ? nf(s.copies30) : "—"),
     card(t("statPerDay"), s.history_on ? (s.copies30 / 30).toFixed(1) : "—"),
-    // — What that says about the collection —
-    card(t("statAvg"), s.used_count ? s.avg_copies.toFixed(1) : "—"),
-    card(t("statTopCopies"), s.top && s.top.length ? nf(s.top[0].count) : "—"),
-    card(t("statUsedShare"), s.total_prompts ? `${Math.round((s.used_count / s.total_prompts) * 100)} %` : "—"),
-    card(t("statUnused"), nf(s.unused)),
   );
   body.appendChild(cards);
-  // Info rows: last-used + longest prompt.
-  const info = document.createElement("div");
-  info.className = "stat-views";
+  // Overview (2 columns wide) next to the per-view breakdown (1 column).
   const infoRow = (label, value) => {
     const r = document.createElement("div"); r.className = "stat-view-row";
     const l = document.createElement("span"); l.textContent = label;
     const v = document.createElement("span"); v.className = "stat-view-count"; v.textContent = value;
     r.append(l, v); return r;
   };
+  const info = document.createElement("div");
+  info.className = "stat-views";
+  // Only what the cards above do NOT already show — the most-used count is a card
+  // and a bar below it, so it stays out of here.
   if (s.recent_ts) info.appendChild(infoRow(t("statRecent"), `${s.recent_name} · ${new Date(s.recent_ts * 1000).toLocaleDateString(LANG)}`));
   if (s.longest_chars) info.appendChild(infoRow(t("statLongest"), `${s.longest_name} · ${nf(s.longest_chars)} ${t("lenChars")}`));
-  if (info.childElementCount) { body.appendChild(statSection(t("statOverview"))); body.appendChild(info); }
+  const split = document.createElement("div"); split.className = "stat-overview-split";
+  const ovCol = document.createElement("div"); ovCol.className = "stat-overview-main";
+  ovCol.append(statSection(t("statOverview")), info);
+  split.appendChild(ovCol);
+  if (s.per_view.length) {
+    const pvCol = document.createElement("div"); pvCol.className = "stat-overview-side";
+    const pv = document.createElement("div"); pv.className = "stat-views";
+    for (const v of s.per_view) {
+      const row = document.createElement("div"); row.className = "stat-view-row";
+      const name = document.createElement("span"); name.textContent = v.name;
+      const cnt = document.createElement("span"); cnt.className = "stat-view-count"; cnt.textContent = nf(v.count);
+      row.append(name, cnt);
+      pv.appendChild(row);
+    }
+    pvCol.append(statSection(t("statPerView")), pv);
+    split.appendChild(pvCol);
+  } else {
+    split.classList.add("no-side"); // nothing to put in the right third
+  }
+  body.appendChild(split);
   // Type breakdown as proportional bars.
   if (s.types.length) {
     body.appendChild(statSection(t("statTypes")));
@@ -3471,22 +3515,12 @@ async function renderStatsPanel(body) {
     }
     body.appendChild(list);
   }
-  if (s.per_view.length) {
-    body.appendChild(statSection(t("statPerView")));
-    const list = document.createElement("div"); list.className = "stat-views";
-    for (const v of s.per_view) {
-      const row = document.createElement("div"); row.className = "stat-view-row";
-      const name = document.createElement("span"); name.textContent = v.name;
-      const cnt = document.createElement("span"); cnt.className = "stat-view-count"; cnt.textContent = nf(v.count);
-      row.append(name, cnt);
-      list.appendChild(row);
-    }
-    body.appendChild(list);
-  }
   wireClearButtons(body); // clear-X on the top-N field
 }
 function jumpToPrompt(name) {
-  settingsEl.classList.add("hidden");
+  // The settings and the backups dialog stay open underneath: the library is only
+  // raised above them, so closing it lands back on the statistics it was opened from.
+  document.body.classList.add("library-front");
   $("library-btn").click(); // resets + opens the library
   libQuery = name || "";
   $("library-q").value = libQuery;
@@ -3618,6 +3652,10 @@ async function saveBackupSetting(kind, key, value) {
 }
 // Backups live in their own dialog (opened from settings), not in the expert menu:
 // the page carries settings, diagnostics and a restore list and needs the room.
+// What is typed into the backup-password field but not saved yet. The panel is
+// rebuilt on every setting change, which would otherwise throw the input away
+// mid-typing. Cleared on save and when the dialog closes.
+let backupPwDraft = "";
 function openBackups() {
   $("backup-modal").classList.remove("hidden");
   renderBackupPanel($("backup-panel"));
@@ -3625,6 +3663,7 @@ function openBackups() {
 }
 function closeBackups() {
   $("backup-modal").classList.add("hidden");
+  backupPwDraft = ""; // never keep an unsaved password around after the dialog is gone
 }
 
 // Remembered UI state (which panel sections are expanded). Kept in ui_flags so it
@@ -3638,14 +3677,14 @@ async function renderBackupPanel(body) {
   // Fetch BEFORE clearing: emptying the panel and only then awaiting lets the browser
   // paint the empty state for a frame, which showed up as a visible flash on every
   // re-render (backup now, value change …).
-  let backups;
-  try { backups = await invoke("list_backups"); }
+  let backups, hadPw;
+  try { [backups, hadPw] = await Promise.all([invoke("list_backups"), invoke("has_backup_password").catch(() => false)]); }
   catch (e) { toast(String(e)); return; }
   body.innerHTML = "";
   const nf = (n) => Number(n).toLocaleString(LANG);
-  const card = (l, v, small) => {
+  const card = (l, v) => {
     const c = document.createElement("div"); c.className = "stat-card";
-    const vv = document.createElement("div"); vv.className = "stat-val" + (small ? " stat-val-sm" : ""); vv.textContent = v;
+    const vv = document.createElement("div"); vv.className = "stat-val"; vv.textContent = v;
     const ll = document.createElement("div"); ll.className = "stat-label"; ll.textContent = l;
     c.append(vv, ll); return c;
   };
@@ -3681,20 +3720,24 @@ async function renderBackupPanel(body) {
   };
 
   const fmtInterval = (h) => (h < 24 ? `${h} h` : `${h / 24} d`); // ≥24h shown in days
-  const gfsSum = () => Math.max(1, Math.min(50, val("backupDaily") + val("backupWeekly") + val("backupMonthly")));
-  const numRow = (labelKey, key, min, max, onSet) => {
-    const l = document.createElement("label"); l.className = "field backup-set-row";
-    const s = document.createElement("span"); s.textContent = t(labelKey);
-    const i = document.createElement("input"); i.type = "number"; i.min = min; i.max = max; i.className = "modal-input"; i.value = String(val(key));
-    i.addEventListener("change", async () => { const v = Math.max(min, Math.min(max, Number(i.value) || min)); i.value = String(v); await onSet(v); });
-    l.append(s, i); return l;
+
+  const switchRow = (labelText, on, onChange, tipKey) => {
+    const l = document.createElement("label"); l.className = "field switch-field";
+    const s = document.createElement("span"); s.textContent = labelText;
+    const i = document.createElement("input"); i.type = "checkbox"; i.className = "switch"; i.checked = on;
+    i.addEventListener("change", () => onChange(i.checked));
+    l.append(s, i);
+    return tipKey ? withTip(l, tipKey) : l;
   };
 
-  // ---- Settings ---- (auto-backup always runs; the interval controls how often)
+  // ---- Settings ---- Left column: making a backup and when it happens by itself.
+  // Right column: how many of them survive.
   body.appendChild(statSection(t("backupSettings")));
-  const set = document.createElement("div"); set.className = "backup-settings";
-  // "Backup now" + interval + (unless GFS) keep, all on one row — backup-now first.
-  const row2 = document.createElement("div"); row2.className = "backup-two-col";
+  const set = document.createElement("div"); set.className = "backup-settings backup-cols";
+  const left = document.createElement("div"); left.className = "backup-col";
+  const right = document.createElement("div"); right.className = "backup-col";
+  set.append(left, right);
+
   const nowBtn = document.createElement("button"); nowBtn.type = "button"; nowBtn.className = "ghost-btn backup-now-btn"; nowBtn.textContent = t("backupNow");
   nowBtn.addEventListener("click", async () => {
     try { await invoke("create_backup", { keep: Math.round(val("backupKeep")) }); toast(t("backupDone")); }
@@ -3702,47 +3745,57 @@ async function renderBackupPanel(body) {
     await saveUiState("backupListOpen", true); // reveal the fresh backup right away
     renderBackupPanel(body);
   });
-  row2.appendChild(nowBtn);
-  const iv = document.createElement("label"); iv.className = "field backup-set-row backup-interval-row";
-  const ivl = document.createElement("span"); ivl.textContent = t("valBackupInterval");
-  const ivs = document.createElement("select"); ivs.className = "modal-input";
-  for (const h of [6, 12, 24, 48, 168]) { const o = document.createElement("option"); o.value = String(h); o.textContent = fmtInterval(h); ivs.appendChild(o); }
-  ivs.value = String(val("backupIntervalH"));
-  ivs.addEventListener("change", async () => { await saveBackupSetting("value", "backupIntervalH", Number(ivs.value)); renderBackupPanel(body); });
-  iv.append(ivl, ivs); row2.appendChild(iv);
-  if (!optFlag("backupGfs")) {
-    row2.appendChild(numRow("valBackupKeep", "backupKeep", 1, 50, (v) => saveBackupSetting("value", "backupKeep", v)));
-  }
-  set.appendChild(row2);
-  // Period-based retention (GFS): keep N per day / week / month.
-  const gsw = document.createElement("label"); gsw.className = "field switch-field";
-  const gswl = document.createElement("span"); gswl.textContent = t("flagBackupGfs");
-  const gswi = document.createElement("input"); gswi.type = "checkbox"; gswi.className = "switch"; gswi.checked = optFlag("backupGfs");
-  gswi.addEventListener("change", async () => {
-    await saveBackupSetting("flag", "backupGfs", gswi.checked);
-    if (gswi.checked) await saveBackupSetting("value", "backupKeep", gfsSum()); // keep = sum of tiers
+  left.appendChild(nowBtn);
+  left.appendChild(switchRow(t("flagAutoBackup"), flag("autoBackup"), async (on) => {
+    await saveBackupSetting("flag", "autoBackup", on);
     renderBackupPanel(body);
-  });
-  gsw.append(gswl, gswi); set.appendChild(gsw);
+  }));
+  // The interval only means something while automatic backups run.
+  if (flag("autoBackup")) {
+    const iv = document.createElement("label"); iv.className = "field backup-set-row";
+    const ivl = document.createElement("span"); ivl.textContent = t("valBackupInterval");
+    const ivs = document.createElement("select"); ivs.className = "modal-input";
+    for (const h of [6, 12, 24, 48, 168]) { const o = document.createElement("option"); o.value = String(h); o.textContent = fmtInterval(h); ivs.appendChild(o); }
+    ivs.value = String(val("backupIntervalH"));
+    ivs.addEventListener("change", async () => { await saveBackupSetting("value", "backupIntervalH", Number(ivs.value)); renderBackupPanel(body); });
+    iv.append(ivl, ivs); left.appendChild(iv);
+  }
+
+  // Right column — retention: a plain count, or the period-based tiers.
+  if (!optFlag("backupGfs")) {
+    right.appendChild(numRow("valBackupKeep", "backupKeep", 1, 50, (v) => saveBackupSetting("value", "backupKeep", v)));
+  }
+  right.appendChild(switchRow(t("flagBackupGfs"), optFlag("backupGfs"), async (on) => {
+    await saveBackupSetting("flag", "backupGfs", on);
+    renderBackupPanel(body);
+  }, "backupGfs")); // the name alone does not say what it keeps
   if (optFlag("backupGfs")) {
-    const tiers = document.createElement("div"); tiers.className = "backup-three-col";
-    const onTier = (key) => async (v) => { await saveBackupSetting("value", key, v); await saveBackupSetting("value", "backupKeep", gfsSum()); };
+    // Day / week beside each other, month / year underneath — four small fields.
+    // The tiers replace the plain count entirely (the backend ignores it while smart
+    // retention is on), so the count the user set stays untouched for when it is off.
+    const tiers = document.createElement("div"); tiers.className = "backup-tier-grid";
+    const onTier = (key) => async (v) => { await saveBackupSetting("value", key, v); };
     tiers.appendChild(numRow("valBackupDaily", "backupDaily", 0, 30, onTier("backupDaily")));
     tiers.appendChild(numRow("valBackupWeekly", "backupWeekly", 0, 52, onTier("backupWeekly")));
     tiers.appendChild(numRow("valBackupMonthly", "backupMonthly", 0, 60, onTier("backupMonthly")));
-    set.appendChild(tiers);
+    tiers.appendChild(numRow("valBackupYearly", "backupYearly", 0, 20, onTier("backupYearly")));
+    right.appendChild(tiers);
   }
   // Optional backup password. Without one, backups use a fixed key and restore on any
   // PC; with one they need exactly this password. The stored password is never sent
   // back to the UI — the eye only reveals what was just typed in this session.
   const pwRow = document.createElement("div"); pwRow.className = "field backup-pw-row";
+  // Dots as the PLACEHOLDER, never as a value: they show that a password exists
+  // without putting anything revealable — or accidentally saveable — in the field.
+  const PW_DOTS = "••••••••";
   const pwLabel = document.createElement("span"); pwLabel.textContent = t("backupPasswordLabel");
   const pwWrap = document.createElement("div"); pwWrap.className = "backup-pw-wrap";
   const pwIn = document.createElement("input");
   pwIn.type = "password"; pwIn.className = "modal-input"; pwIn.maxLength = 128;
   pwIn.autocomplete = "new-password";
-  const hasPw = await invoke("has_backup_password").catch(() => false);
-  pwIn.placeholder = hasPw ? t("backupPasswordSetPh") : t("backupPasswordPh");
+  let hasPw = hadPw; // placeholder + the remove button follow this (syncPwButtons)
+  pwIn.value = backupPwDraft; // survives the re-render a setting change triggers
+  pwIn.addEventListener("input", () => { backupPwDraft = pwIn.value; });
   const eye = document.createElement("button");
   eye.type = "button"; eye.className = "icon-btn backup-pw-eye";
   eye.setAttribute("aria-label", t("showPassword"));
@@ -3760,18 +3813,54 @@ async function renderBackupPanel(body) {
   save.type = "button";
   save.className = "ghost-btn backup-pw-save";
   save.textContent = t("save");
+  // Removing is its own button below — an empty field here saves nothing, so the
+  // password can never be dropped by an absent-minded click on Save.
+  const remove = document.createElement("button");
+  const syncPwButtons = () => {
+    pwIn.placeholder = hasPw ? PW_DOTS : t("backupPasswordPh");
+    remove.classList.toggle("hidden", !hasPw);
+  };
   save.addEventListener("click", async () => {
     const pw = pwIn.value;
+    if (!pw) { toast(t("backupPasswordEmpty")); return; }
     try {
       await invoke("set_backup_password", { password: pw });
-      toast(pw ? t("backupPasswordWarn") : t("backupPasswordCleared"));
+      toast(t("backupPasswordWarn"));
+      hasPw = true;
+      backupPwDraft = "";
       pwIn.value = "";
       pwIn.type = "password";
-      pwIn.placeholder = pw ? t("backupPasswordSetPh") : t("backupPasswordPh");
+      syncPwButtons();
     } catch (e) { toast(String(e)); }
   });
+  remove.type = "button";
+  remove.className = "ghost-btn danger-btn backup-pw-remove";
+  remove.textContent = t("backupPasswordRemove");
+  remove.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: t("backupPasswordRemove"),
+      message: t("backupPasswordClearConfirm"),
+      confirmLabel: t("backupPasswordRemove"),
+      icon: LOCK_SVG,
+    });
+    if (!ok) return;
+    try {
+      await invoke("set_backup_password", { password: "" });
+      toast(t("backupPasswordCleared"));
+      hasPw = false;
+      backupPwDraft = "";
+      pwIn.value = "";
+      pwIn.type = "password";
+      syncPwButtons();
+    } catch (e) { toast(String(e)); }
+  });
+  syncPwButtons();
   pwWrap.append(pwIn, eye);
-  pwRow.append(pwLabel, pwWrap, save);
+  // Field and both buttons stay on one line, so the row spans both columns —
+  // neither column alone is wide enough for all three.
+  const pwControls = document.createElement("div"); pwControls.className = "backup-pw-controls";
+  pwControls.append(pwWrap, save, remove);
+  pwRow.append(pwLabel, pwControls);
   set.appendChild(pwRow);
   body.appendChild(set);
 
@@ -3781,25 +3870,19 @@ async function renderBackupPanel(body) {
   const oldest = backups.length ? parseStamp(backups[backups.length - 1].name) : null;
   const sizes = backups.map((b) => b.size);
   const cards = document.createElement("div"); cards.className = "stat-cards";
-  const recent = backups.filter((b) => {
-    const d = parseStamp(b.name);
-    return d && Date.now() - d.getTime() <= 7 * 86400000;
-  }).length;
-  // Row 1 answers "what do I have and from when", row 2 "when is the next one and
-  // how much space does this cost".
+  // Row 1: how many backups there are and what they cost in disk space.
+  // Row 2: the time axis — how far back they reach and when the next one is due.
   cards.append(
     card(t("backupCount"), nf(backups.length)),
-    card(t("backupThisWeek"), nf(recent)),
+    card(t("backupTotalSize"), fmtBytes(total)),
+    card(t("backupLargest"), backups.length ? fmtBytes(Math.max(...sizes)) : "—"),
+    card(t("backupSmallest"), backups.length ? fmtBytes(Math.min(...sizes)) : "—"),
     card(t("backupSpan"), newest && oldest
       ? `${nf(Math.max(0, Math.round((newest - oldest) / 86400000)))} d`
       : "—"),
-    dtCard(t("backupOldest"), oldest),
+    dtCard(t("backupNext"), newest && flag("autoBackup") ? new Date(newest.getTime() + val("backupIntervalH") * 3600000) : null),
     dtCard(t("backupNewest"), newest),
-    dtCard(t("backupNext"), newest ? new Date(newest.getTime() + val("backupIntervalH") * 3600000) : null),
-    card(t("backupTotalSize"), fmtBytes(total)),
-    card(t("backupAvgSize"), backups.length ? fmtBytes(Math.round(total / backups.length)) : "—"),
-    card(t("backupLargest"), backups.length ? fmtBytes(Math.max(...sizes)) : "—"),
-    card(t("backupSmallest"), backups.length ? fmtBytes(Math.min(...sizes)) : "—"),
+    dtCard(t("backupOldest"), oldest),
   );
   body.append(collapseHead(t("backupDiag"), cards, "backupDiagOpen"), cards);
 
@@ -4456,8 +4539,23 @@ function fillLibrarySort() {
 }
 
 // Close the library and flush any deferred grid rebuild from batch edits.
+// The library was raised over the backups dialog by jumpToPrompt. Put it back down;
+// `closeBehind` also dismisses the dialogs underneath (dragging onto the grid needs
+// the grid). Returns true if the library was raised at all.
+function dropLibraryFront(closeBehind) {
+  if (!document.body.classList.contains("library-front")) return false;
+  document.body.classList.remove("library-front");
+  if (closeBehind) {
+    closeBackups();
+    settingsEl.classList.add("hidden");
+  }
+  return true;
+}
 function hideLibrary() {
   libraryEl.classList.add("hidden");
+  // Prompts may have been edited or deleted while the library was up — the
+  // statistics underneath would otherwise still show the old numbers.
+  if (dropLibraryFront(false)) renderStatsPanel($("stats-panel"));
   if (gridDirty) { gridDirty = false; renderGrid(true); }
 }
 
@@ -5776,6 +5874,8 @@ function bind() {
     else if (!modal.root.classList.contains("hidden")) confirmDiscardIfDirty().then((ok) => { if (ok) closeModal(); });
     else if (!$("clip-modal").classList.contains("hidden")) $("clip-modal").classList.add("hidden");
     else if (!$("dupes-modal").classList.contains("hidden")) $("dupes-modal").classList.add("hidden");
+    // A library raised over the backups dialog is the topmost thing — it closes first.
+    else if (document.body.classList.contains("library-front") && !libraryEl.classList.contains("hidden")) hideLibrary();
     else if (!$("backup-modal").classList.contains("hidden")) closeBackups();
     else if (!journalEl.classList.contains("hidden")) journalEl.classList.add("hidden");
     else if (!libraryEl.classList.contains("hidden")) hideLibrary();

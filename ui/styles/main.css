@@ -878,6 +878,10 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .watch-toggle:hover { color: var(--fg); }
 .watch-toggle.active { color: var(--accent-fg); background: var(--accent); }
 .watch-toggle.active:hover { background: color-mix(in srgb, var(--accent) 85%, #000); color: var(--accent-fg); }
+/* Jumping from the statistics into the library raises it over the backups dialog it
+   was opened from, without closing it — the edit dialog keeps its place on top. */
+body.library-front #library.overlay { z-index: 66; }
+body.library-front #modal.overlay { z-index: 67; }
 /* Variable-fill dialog stacks above the library/journal it was opened from. */
 #vars-modal.overlay { z-index: 70; }
 /* Confirm dialog stacks above everything (incl. the edit modal). */
@@ -1643,6 +1647,10 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
 .clear-wrap > input, .clear-wrap > textarea { width: 100%; }
 .clear-wrap > input { padding-right: 34px; }
 .clear-wrap > textarea { padding-right: 32px; }
+/* A wrapped field is sized by its wrapper. Row rules that size `.modal-input`
+   directly would otherwise leave the input short of the wrapper edge, and the X —
+   positioned against the wrapper — ends up floating beside the field. */
+.clear-wrap > input.modal-input { width: 100%; min-width: 0; }
 /* Wrapped number fields drop the native spinners — the X takes their place. */
 .clear-wrap > input[type=number]::-webkit-inner-spin-button,
 .clear-wrap > input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -1710,10 +1718,10 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
 /* F11 usage statistics dashboard. */
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
 /* Fixed column counts inside the backups dialog so both grids come out as full
-   rows (diagnostics 10 = 2x5, statistics 16 = 4x4) instead of a ragged last row.
+   rows (diagnostics 8 = 2x4, statistics 12 = 3x4) instead of a ragged last row.
    Narrow windows fall back to the auto-fit above. */
 @media (min-width: 640px) {
-  #backup-panel .stat-cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #backup-panel .stat-cards,
   #stats-panel .stat-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .stat-card { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); text-align: center; }
@@ -1735,6 +1743,12 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
 .stat-cleanup-item:hover { border-color: var(--accent); color: var(--fg); }
 .stat-views { display: flex; flex-direction: column; gap: 4px; }
 .stat-view-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 2px; }
+/* Overview keeps two thirds of the width, the per-view breakdown the last third. */
+.stat-overview-split { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+.stat-overview-main, .stat-overview-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.stat-overview-split .stat-view-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-overview-split.no-side { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 720px) { .stat-overview-split { grid-template-columns: minmax(0, 1fr); } }
 .stat-view-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* F6 duplicate finder. */
@@ -1783,7 +1797,6 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
 .dup-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 
 /* F2 backups & restore. */
-.stat-val-sm { font-size: 13px !important; font-weight: 600 !important; }
 /* Date/time diagnostic card: date over time, no comma, a touch larger for legibility. */
 .stat-dt { display: flex; flex-direction: column; gap: 1px; line-height: 1.25; }
 .stat-dt .dt-date { font-size: 15px; font-weight: 700; }
@@ -1797,26 +1810,31 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
 .field.backup-set-row { flex-direction: row; }
 .backup-set-row > span { font-size: 13px; }
 .backup-set-row .modal-input { flex: 0 0 auto; width: auto; min-width: 90px; }
-/* Backup-now + interval + keep sit left-aligned, each only as wide as its content. */
-.backup-two-col { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.backup-two-col > .backup-set-row { flex: 0 0 auto; justify-content: flex-start; gap: 8px; }
-.backup-two-col .backup-set-row .modal-input { min-width: 72px; }
-.backup-two-col .backup-set-row .clear-wrap { width: 88px; }
-.backup-now-btn { flex: 0 0 auto; }
-.backup-three-col { display: flex; gap: 8px; }
-.backup-three-col > .backup-set-row { flex: 1 1 0; flex-direction: column; align-items: stretch; gap: 4px; }
-.backup-three-col .modal-input, .backup-three-col .clear-wrap { width: 100%; min-width: 0; }
-/* Usage-stats toggle + top-N field share one row (toggle left, field right). */
+/* Settings split in two: left "make a backup / how often", right "how many are kept". */
+.backup-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 24px; align-items: start; }
+.backup-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.backup-now-btn { align-self: flex-start; }
+@media (max-width: 720px) { .backup-cols { grid-template-columns: minmax(0, 1fr); } }
+/* GFS tiers as a 2x2 block of small fields (day / week over month / year). */
+.backup-tier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.backup-tier-grid > .backup-set-row { justify-content: space-between; gap: 8px; }
+.backup-tier-grid .modal-input { flex: 0 0 auto; width: 64px; min-width: 0; text-align: center; }
+.backup-tier-grid .clear-wrap { flex: 0 0 auto; width: 64px; }
 /* Optional backup password: label left, field + eye button right. */
 .field.backup-pw-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
 .backup-pw-row > span { font-size: 13px; }
-.backup-pw-wrap { position: relative; flex: 0 1 240px; display: flex; align-items: center; }
+/* In the narrow settings column the label would wrap next to the field, so it
+   gets its own line and the input keeps the full width. */
+.backup-col .field.backup-pw-row { flex-wrap: wrap; justify-content: flex-start; gap: 6px 8px; }
+/* The password row spans both columns: label left, field + Save + Remove right. */
+.backup-cols > .backup-pw-row { grid-column: 1 / -1; }
+.backup-pw-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.backup-pw-wrap { position: relative; flex: 1 1 120px; min-width: 0; max-width: 240px; display: flex; align-items: center; }
 .backup-pw-wrap .modal-input { padding-right: 36px; }
 .backup-pw-eye { position: absolute; right: 4px; width: 28px; height: 28px; }
-.backup-pw-eye:disabled { opacity: 0.35; pointer-events: none; }
 /* Saving the backup password is an explicit click, never a side effect of leaving
-   the field — so the button sits right next to it. */
-.backup-pw-save { flex: 0 0 auto; }
+   the field — so the button sits right next to it, with "remove" beside it. */
+.backup-pw-save, .backup-pw-remove { flex: 0 0 auto; }
 /* WebView2 draws its OWN reveal button inside password fields, which showed up as
    a second eye next to the themed one. */
 input[type="password"]::-ms-reveal,
@@ -2037,11 +2055,11 @@ body.drag-over::after {
 .export-row { display: flex; gap: 8px; }
 .export-row + .export-row { margin-top: 6px; }
 .export-row .ghost-btn { flex: 1; }
-/* Sub-heading for the second (whole-backup) export row. */
-.update-row { display: flex; align-items: center; gap: 10px; }
-.update-row .ghost-btn { flex: 0 0 auto; }
-/* Backup shortcut sits at the far right of the update row. */
-.update-backup-btn { margin-left: auto; }
+/* Same three columns as the export rows above, so the auto-update switch lines up
+   with the last button there; check + version share the first two columns. */
+.update-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; align-items: center; }
+.update-actions { grid-column: span 2; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.update-actions .ghost-btn { flex: 0 0 auto; }
 /* Clickable version/status label (left of the check button) → releases page, or the
    update dialog once an update is pending. */
 .update-version {
@@ -2053,15 +2071,6 @@ body.drag-over::after {
 }
 .update-version:hover { color: var(--fg); text-decoration: underline; }
 .update-version.update-avail { color: var(--accent); }
-.auto-update {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
 
 /* ---- Prompt library ---- */
 /* One wide column by default (read more of each prompt); the header toggle sets the

@@ -50,6 +50,16 @@ if exist "%TEMP%\ps-instico" rmdir /s /q "%TEMP%\ps-instico"
 
 echo [INFO] Building release exe + installer ^(this can take a few minutes^)...
 echo.
+rem Panic locations from the dependencies survive "strip" as string literals, which
+rem would put the build machine's account name (%%USERPROFILE%%\.cargo\registry\...)
+rem into a public download. Remap them to a neutral prefix. Changing RUSTFLAGS
+rem invalidates the dependency cache, so the first build after this is a full one.
+rem rustc splits RUSTFLAGS on spaces, so a profile path containing one cannot be
+rem remapped this way - skip it rather than break the build.
+set "CARGO_REG=%USERPROFILE%\.cargo\registry"
+set "RUSTFLAGS=--remap-path-prefix=%CARGO_REG%=cargo"
+echo %CARGO_REG%| find " " >nul
+if not errorlevel 1 set "RUSTFLAGS=" & echo [WARN] Profile path contains a space - build paths stay in the exe.
 rem Full bundle: produces BOTH the portable exe (target\release\prompt-saver.exe)
 rem AND the NSIS installer (target\release\bundle\nsis). Never pass --no-bundle
 rem here or the installer is skipped (that was the "no installer created" bug).

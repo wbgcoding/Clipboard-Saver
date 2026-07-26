@@ -27,7 +27,7 @@ NOT_IN_EXPERT = {
     "autoPaste",
     # Backup settings, rendered by renderBackupPanel.
     "autoBackup", "backupGfs", "backupKeep", "backupIntervalH",
-    "backupDaily", "backupWeekly", "backupMonthly",
+    "backupDaily", "backupWeekly", "backupMonthly", "backupYearly",
     # Statistics, rendered by renderStatsPanel.
     "usageStats", "statsTopN",
 }

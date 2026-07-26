@@ -3,6 +3,63 @@
 All notable changes to **Prompt Saver**. Download the latest version from the
 [releases page](../../releases/latest).
 
+## 2.6.3 (2026-07-26)
+
+The backups window grew up: automatic backups can be switched off and now keep
+running while the app is open, retention gained a yearly tier, and the page was
+rebuilt in two columns. The statistics were trimmed to the numbers that actually
+say something, and fourteen tooltips finally describe the setting they sit on.
+
+### Added
+- **Automatic backups have an off switch**, right in the backups window — and they
+  keep running while the app is open instead of only at launch. Switching them off
+  or changing the interval takes effect straight away, without a restart.
+- **Yearly retention** — smart retention (formerly "retention by period") keeps a
+  number of backups per day, week, month **and year**, as a compact block of four
+  fields.
+- **Remove password** — a button of its own next to Save, with a confirmation, so
+  the backup password can no longer be dropped by an absent-minded click on Save.
+
+### Improved
+- **The Backups button became "Backup manager"** and moved down to the other backup
+  buttons in the settings, where you would look for it.
+- **Backups window in two columns** — taking a backup, the automatic schedule and
+  the password on the left, retention on the right.
+- **Backup diagnostics trimmed to the eight figures that matter**: count, total
+  size, largest and smallest, the period covered, and the next, newest and oldest
+  backup.
+- **Usage statistics reduced to twelve figures in three clear rows**, with the
+  overview and the per-view breakdown side by side instead of stacked. Numbers that
+  only repeated what a chart already showed are gone.
+- **A backup password you are still typing survives** changing another setting in
+  the same window — it used to be thrown away when the page rebuilt itself.
+- **A stored password shows as dots**, so you can see that one is set without it
+  ever being readable.
+- **The update row got the same two-column shape as the toggles above it** — check
+  button and version on the left, the auto-update switch on the right.
+- Jumping from a statistics chart into the library raises the library over the
+  backups window instead of closing it, so closing the library lands you back on
+  the statistics you came from.
+
+### Fixed
+- **Fourteen tooltips described the wrong thing** and were rewritten in all 20
+  languages — among them the backup button (it never opened a page in the expert
+  menu), the duplicate finder (it offers no merge), the usage-statistics switch (it
+  shows the dashboard, the copy history does the counting), the variable-defaults
+  option (it remembers your last value), the view-tab border, the tile-name and
+  preview-length options, and the update-check-at-launch switch (it needs
+  auto-update on).
+- **"Never used" means never used** — the cleanup list no longer mixes in prompts
+  that were merely untouched for a month.
+- **Switching smart retention on no longer overwrites the plain keep count**, so
+  the number you set is still there when you switch it back off.
+- **The clear button in the number fields of the backups window** ("Backups to
+  keep", the retention tiers, the top-list length) sat beside the field instead of
+  inside it, and disappeared for good once it had been used. It now sits at the
+  right edge of the field and comes back as soon as the value does.
+- Clearing one of those fields and clicking away lands on the setting's default
+  instead of leaving the field empty or dropping to the lowest possible value.
+
 ## 2.6.2 (2026-07-26)
 
 Backups get their own window, their own encryption and a lot less disk space. The

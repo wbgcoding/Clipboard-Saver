@@ -2230,12 +2230,9 @@ struct UsageStats {
     total_copies: u64,
     copies7: u64,
     copies30: u64,
-    favorites: usize,
-    unused: usize,
     used_count: usize,
     avg_copies: f64,
     total_chars: u64,
-    colored: usize,
     recent_name: String,
     recent_ts: u64,
     longest_name: String,
@@ -2284,12 +2281,9 @@ async fn usage_stats(app: AppHandle, state: State<'_, Db>, top_n: usize) -> Resu
     };
     let total_prompts = store.prompts.len();
     let total_copies: u64 = usage.values().map(|v| *v as u64).sum();
-    let favorites = store.prompts.iter().filter(|p| p.favorite).count();
     let used_count = store.prompts.iter().filter(|p| usage.get(&p.id).copied().unwrap_or(0) > 0).count();
-    let unused = total_prompts.saturating_sub(used_count);
     let avg_copies = if used_count > 0 { total_copies as f64 / used_count as f64 } else { 0.0 };
     let total_chars: u64 = store.prompts.iter().map(|p| p.text.chars().count() as u64).sum();
-    let colored = store.prompts.iter().filter(|p| !p.color.is_empty()).count();
     let (mut recent_name, mut recent_ts) = (String::new(), 0u64);
     for p in &store.prompts {
         let lu = last_used.get(&p.id).copied().unwrap_or(0);
@@ -2331,11 +2325,8 @@ async fn usage_stats(app: AppHandle, state: State<'_, Db>, top_n: usize) -> Resu
     let mut never_used: Vec<StatBar> = store
         .prompts
         .iter()
-        .filter(|p| {
-            let u = usage.get(&p.id).copied().unwrap_or(0);
-            let lu = last_used.get(&p.id).copied().unwrap_or(0);
-            u == 0 || lu < cutoff30
-        })
+        // Never copied — not "not lately", so the list means exactly what it says.
+        .filter(|p| usage.get(&p.id).copied().unwrap_or(0) == 0)
         .map(|p| StatBar { id: p.id.clone(), name: name_of(p), count: usage.get(&p.id).copied().unwrap_or(0) })
         .collect();
     never_used.truncate(top_n.max(10) * 2);
@@ -2366,12 +2357,9 @@ async fn usage_stats(app: AppHandle, state: State<'_, Db>, top_n: usize) -> Resu
         total_copies,
         copies7,
         copies30,
-        favorites,
-        unused,
         used_count,
         avg_copies,
         total_chars,
-        colored,
         recent_name,
         recent_ts,
         longest_name,
@@ -2597,13 +2585,19 @@ struct GfsConfig {
     daily: usize,
     weekly: usize,
     monthly: usize,
+    yearly: usize,
 }
 fn gfs_from_settings(s: &Settings) -> Option<GfsConfig> {
     if s.ui_flags.get("backupGfs") != Some(&true) {
         return None;
     }
     let g = |k: &str, d: f64| s.ui_values.get(k).copied().unwrap_or(d).max(0.0) as usize;
-    Some(GfsConfig { daily: g("backupDaily", 3.0), weekly: g("backupWeekly", 4.0), monthly: g("backupMonthly", 12.0) })
+    Some(GfsConfig {
+        daily: g("backupDaily", 3.0),
+        weekly: g("backupWeekly", 4.0),
+        monthly: g("backupMonthly", 6.0),
+        yearly: g("backupYearly", 1.0),
+    })
 }
 // Days since 1970-01-01 for a proleptic Gregorian date (Hinnant's algorithm).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
@@ -2614,18 +2608,61 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146097 + doe - 719468
 }
-// (day, week, month) tier keys from a backup folder name "YYYY-MM-DD_HH-MM-SS".
-fn backup_date_keys(name: &str) -> Option<(i64, i64, i64)> {
+// (day, week, month, year) tier keys from a backup folder name "YYYY-MM-DD_HH-MM-SS".
+fn backup_date_keys(name: &str) -> Option<(i64, i64, i64, i64)> {
     let date = name.split('_').next()?;
     let mut it = date.split('-');
     let y: i64 = it.next()?.parse().ok()?;
     let m: i64 = it.next()?.parse().ok()?;
     let d: i64 = it.next()?.parse().ok()?;
     let days = days_from_civil(y, m, d);
-    Some((days, days.div_euclid(7), y * 12 + m))
+    Some((days, days.div_euclid(7), y * 12 + m, y))
+}
+// Which of `names` (sorted oldest first) rotation throws away. Pure, so the
+// retention rules can be tested without a disk full of folders.
+fn backups_to_drop(names: &[String], keep: usize, gfs: Option<&GfsConfig>) -> Vec<String> {
+    use std::collections::HashSet;
+    let keep = keep.max(1); // a caller passing 0 must never mean "delete everything"
+    let Some(g) = gfs else {
+        let drop = names.len().saturating_sub(keep);
+        return names[..drop].to_vec();
+    };
+    // Newest-first walk; for each tier keep the newest backup per distinct
+    // day / week / month / year up to that tier's count.
+    let pick = |count: usize, idx: usize| -> Vec<String> {
+        let mut seen: HashSet<i64> = HashSet::new();
+        let mut out = Vec::new();
+        if count == 0 {
+            return out;
+        }
+        for n in names.iter().rev() {
+            if let Some(keys) = backup_date_keys(n) {
+                let k = [keys.0, keys.1, keys.2, keys.3][idx];
+                if seen.insert(k) {
+                    out.push(n.clone());
+                    if seen.len() >= count {
+                        break;
+                    }
+                }
+            }
+        }
+        out
+    };
+    let mut keep_set: HashSet<String> = HashSet::new();
+    for (count, idx) in [(g.daily, 0), (g.weekly, 1), (g.monthly, 2), (g.yearly, 3)] {
+        for n in pick(count, idx) {
+            keep_set.insert(n);
+        }
+    }
+    // Every tier at zero would wipe the lot — keep the newest one instead.
+    if keep_set.is_empty() {
+        if let Some(newest) = names.last() {
+            keep_set.insert(newest.clone());
+        }
+    }
+    names.iter().filter(|n| !keep_set.contains(*n)).cloned().collect()
 }
 fn rotate_backups(app: &AppHandle, keep: usize, gfs: Option<GfsConfig>) {
-    use std::collections::HashSet;
     let dir = backups_dir(app);
     let mut names: Vec<String> = fs::read_dir(&dir)
         .into_iter()
@@ -2635,43 +2672,8 @@ fn rotate_backups(app: &AppHandle, keep: usize, gfs: Option<GfsConfig>) {
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
     names.sort(); // oldest first (names are timestamps → chronological)
-    if let Some(g) = gfs {
-        // Newest-first walk; for each tier keep the newest backup per distinct
-        // day / week / month up to that tier's count.
-        let mut desc = names.clone();
-        desc.reverse();
-        let pick = |count: usize, idx: usize| -> Vec<String> {
-            let mut seen: HashSet<i64> = HashSet::new();
-            let mut out = Vec::new();
-            if count == 0 {
-                return out;
-            }
-            for n in &desc {
-                if let Some(keys) = backup_date_keys(n) {
-                    let k = [keys.0, keys.1, keys.2][idx];
-                    if seen.insert(k) {
-                        out.push(n.clone());
-                        if seen.len() >= count {
-                            break;
-                        }
-                    }
-                }
-            }
-            out
-        };
-        let mut keep_set: HashSet<String> = HashSet::new();
-        for n in pick(g.daily, 0) { keep_set.insert(n); }
-        for n in pick(g.weekly, 1) { keep_set.insert(n); }
-        for n in pick(g.monthly, 2) { keep_set.insert(n); }
-        for n in &names {
-            if !keep_set.contains(n) {
-                let _ = fs::remove_dir_all(dir.join(n));
-            }
-        }
-    } else if names.len() > keep {
-        for name in &names[..names.len() - keep] {
-            let _ = fs::remove_dir_all(dir.join(name));
-        }
+    for name in backups_to_drop(&names, keep, gfs.as_ref()) {
+        let _ = fs::remove_dir_all(dir.join(name));
     }
 }
 // Consistent snapshot of data.db via VACUUM INTO (WAL-safe, no locking games). Writes
@@ -2680,6 +2682,9 @@ fn rotate_backups(app: &AppHandle, keep: usize, gfs: Option<GfsConfig>) {
 // takes a few MB down to a fraction of that — and ten of them are kept by default.
 // `data.db` (uncompressed) is still accepted so older backups keep working.
 const BACKUP_DB_GZ: &str = "data.db.gz";
+// How often the auto-backup thread looks at the clock. The shortest interval the UI
+// offers is 6 h, so a quarter of an hour is precise enough and costs nothing.
+const BACKUP_CHECK_SECS: u64 = 900;
 
 fn backup_db_file(folder: &std::path::Path) -> Option<PathBuf> {
     let gz = folder.join(BACKUP_DB_GZ);
@@ -5416,9 +5421,10 @@ struct Backup {
 }
 
 // ---------- Encrypted single-file backups (S7) ----------
-// Format: b"PSB1" | mode(1) | [salt(16) if mode==1] | nonce(12) | AES-256-GCM ciphertext.
-// mode 0 = fixed key (portable: any install restores it). mode 1 = user password
-// (Argon2id(password + pepper, salt)). Old plaintext .json backups are still read.
+// Format: b"PSB1" | mode(1) | [salt(16) for a password mode] | nonce(12) | AES-256-GCM.
+// Modes 0/2 = fixed key (portable: any install restores it), 1/3 = user password
+// (Argon2id(password + pepper, salt)); 2/3 additionally deflate the JSON before
+// encrypting. Old plaintext .json backups are still read.
 const BACKUP_MAGIC: &[u8; 4] = b"PSB1";
 // Fixed obfuscation key — MUST stay identical across all versions or old fixed-key
 // backups become unreadable. Not a secret (open source); it only keeps backups from
@@ -5923,18 +5929,7 @@ pub fn run() {
             let capture_excl = capture_excluded(&store.settings);
             let hotkey = store.settings.hotkey.clone();
 
-            // F2 auto-backup config (read before the store is moved into state).
-            let auto_backup = store.settings.ui_flags.get("autoBackup") != Some(&false);
-            let backup_keep = store.settings.ui_values.get("backupKeep").copied().unwrap_or(10.0).clamp(1.0, 50.0) as usize;
-            let backup_interval_h: u64 = store
-                .settings
-                .ui_values
-                .get("backupIntervalH")
-                .copied()
-                .filter(|v| *v >= 1.0)
-                .unwrap_or(24.0) as u64;
             let clip_on = store.settings.ui_flags.get("clipWatcher") == Some(&true); // F21, off by default
-            let backup_gfs = gfs_from_settings(&store.settings); // F2 GFS retention
 
             app.manage(Mutex::new(store));
             app.manage(SnipState(Mutex::new(Vec::new())));
@@ -5950,15 +5945,34 @@ pub fn run() {
                 clipwatch::start(handle.clone());
             }
 
-            // F2: on start, take a fresh backup if the newest one is older than the
-            // interval. Off the UI thread so it never delays the first paint.
-            if auto_backup {
+            // F2: take a backup whenever the newest one is older than the interval —
+            // once at start, then on every tick for as long as the app runs. The
+            // settings are re-read each round, so switching auto-backup off or
+            // changing the interval takes effect without a restart. Off the UI thread
+            // so it never delays the first paint.
+            {
                 let h = handle.clone();
-                std::thread::spawn(move || {
-                    let interval = backup_interval_h.saturating_mul(3600);
-                    if newest_backup_age(&h).map_or(true, |age| age >= interval) {
-                        let _ = do_backup(&h, backup_keep, backup_gfs);
+                std::thread::spawn(move || loop {
+                    {
+                        // The lock is held across the snapshot, exactly like the manual
+                        // "backup now" command, so no write races with the VACUUM read.
+                        let state = h.state::<Db>();
+                        let store = lock(&state);
+                        let on = store.settings.ui_flags.get("autoBackup") != Some(&false);
+                        let keep = store.settings.ui_values.get("backupKeep").copied().unwrap_or(10.0).clamp(1.0, 50.0) as usize;
+                        let interval_h = store
+                            .settings
+                            .ui_values
+                            .get("backupIntervalH")
+                            .copied()
+                            .filter(|v| *v >= 1.0)
+                            .unwrap_or(24.0) as u64;
+                        let due = newest_backup_age(&h).map_or(true, |age| age >= interval_h.saturating_mul(3600));
+                        if on && due {
+                            let _ = do_backup(&h, keep, gfs_from_settings(&store.settings));
+                        }
                     }
+                    std::thread::sleep(std::time::Duration::from_secs(BACKUP_CHECK_SECS));
                 });
             }
 
@@ -6355,6 +6369,41 @@ mod tests {
         assert!(backup_decrypt(&blob, None).is_err(), "missing password rejected");
         // The fixed key must NOT open a password-protected backup.
         assert!(backup_decrypt(&blob, Some("")).is_err());
+    }
+
+    #[test]
+    fn retention_keeps_the_right_backups_and_never_all_of_them() {
+        let names: Vec<String> = [
+            "2024-03-01_02-00-00", // older year
+            "2025-11-30_02-00-00", // older month
+            "2026-07-20_02-00-00", // older week
+            "2026-07-25_02-00-00",
+            "2026-07-26_02-00-00", // newest
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        // Plain count: the oldest ones go, the newest `keep` stay.
+        assert_eq!(backups_to_drop(&names, 2, None), names[..3].to_vec());
+        assert!(backups_to_drop(&names, 99, None).is_empty());
+        // A count of 0 must not be read as "delete everything".
+        assert_eq!(backups_to_drop(&names, 0, None).len(), names.len() - 1);
+
+        // Tiers count PERIODS, newest first: 3 years reach back to 2024, while one
+        // day / week / month only ever pins the newest backup.
+        let tiers = GfsConfig { daily: 1, weekly: 1, monthly: 1, yearly: 3 };
+        let dropped = backups_to_drop(&names, 10, Some(&tiers));
+        assert!(!dropped.contains(&names[4]), "the newest backup always survives");
+        assert!(!dropped.contains(&names[1]), "second-newest year kept");
+        assert!(!dropped.contains(&names[0]), "third-newest year kept");
+        assert_eq!(dropped, vec![names[2].clone(), names[3].clone()], "no tier asks for these");
+
+        // Every tier at zero must not wipe the lot — the newest one stays.
+        let empty = GfsConfig { daily: 0, weekly: 0, monthly: 0, yearly: 0 };
+        let dropped = backups_to_drop(&names, 5, Some(&empty));
+        assert_eq!(dropped.len(), names.len() - 1);
+        assert!(!dropped.contains(&names[4]));
     }
 
     #[test]

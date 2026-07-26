@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # pdfium.dll is compiled into the exe, so even a test build needs it.
+      - name: Fetch pdfium
+        run: |
+          Invoke-WebRequest https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz -OutFile pdfium.tgz
+          tar -xzf pdfium.tgz bin/pdfium.dll
+          Move-Item bin/pdfium.dll src-tauri/pdfium.dll
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-
+
+      - run: npm ci
+
+      # Both ignored advisories are the same quick-xml parser reached through
+      # plist and xcb: on Windows it only ever runs at build time (and the xcb copy
+      # not at all), so a malicious XML file would have to be in the toolchain
+      # itself. Drop the ignores once Tauri ships a newer plist.
+      - name: Dependency advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+        working-directory: src-tauri
+
+      - name: Rust unit tests
+        run: cargo test --lib
+        working-directory: src-tauri
+
+      - name: Frontend syntax
+        run: |
+          Get-ChildItem ui -Filter *.js | ForEach-Object { node --check $_.FullName }
+
+      - name: Translation key parity
+        run: node tests/i18n_check.js
+
+      - name: Expert menu
+        run: python tests/expert_menu_check.py
+
+      # Both drive a headless browser; the runner image ships Chrome.
+      - name: UI smoke test
+        run: python tests/ui/smoke_test.py
+
+      - name: Modal layout
+        run: python tests/layout/modal_scroll_test.py

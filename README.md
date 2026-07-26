@@ -144,3 +144,9 @@ npm run build              # portable exe + NSIS installer
 [Tauri 2](https://tauri.app) (Rust backend, WebView2 frontend) · vanilla HTML/CSS/JS, no bundler, no framework · SQLite store · `arboard` (clipboard), `rfd` (native dialogs), `pdfium-render` (PDF previews), `xcap` (screen capture), `winreg` (autostart), `sys-locale` (language detection).
 
 Third-party components and their licenses: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+
+## Copyright
+
+© 2026 BG Coding. All rights reserved. The source is published so anyone can see
+what the app does with their data — it is not released for reuse, redistribution
+or derivative works.

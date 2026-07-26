@@ -1280,22 +1280,68 @@ body.chain-mode .tile.chain-skip { opacity: 0.4; filter: grayscale(0.6); pointer
   font-size: 13px;
   font-weight: 600;
 }
+/* Release notes need a little more width than a plain confirm dialog: their tables
+   and headings would otherwise wrap after every other word. */
+#update-modal .modal { width: min(580px, 94vw); }
+/* The box takes the height of whatever the release brought — a two-line note stays
+   two lines tall, a long one scrolls instead of pushing the buttons off screen. */
 .update-notes {
   margin: 0;
-  max-height: 46vh;
+  max-height: min(46vh, 440px);
   overflow-y: auto;
-  scrollbar-gutter: stable;
-  padding: 12px;
+  /* No reserved gutter: short notes would sit visibly off-centre in their box, and
+     the bar only ever appears once, while the dialog opens. */
+  scrollbar-gutter: auto;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-2);
   color: var(--fg);
   font: inherit;
   font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+  line-height: 1.55;
   word-break: break-word;
 }
+.update-notes > :first-child { margin-top: 0; }
+.update-notes > :last-child { margin-bottom: 0; }
+/* Section headings ("Highlights", "Fixed") read as small labels, not as headlines
+   competing with the dialog title above them. */
+.update-notes h3 {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.update-notes p { margin: 0 0 10px; }
+.update-notes ul { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 7px; }
+.update-notes li { position: relative; padding-left: 16px; }
+.update-notes li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.6em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.update-notes strong { font-weight: 700; }
+.update-notes code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+.update-notes table { width: 100%; margin: 0 0 10px; border-collapse: collapse; font-size: 12px; }
+.update-notes th,
+.update-notes td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.update-notes th { color: var(--muted); font-weight: 600; }
+.update-notes tr:last-child th,
+.update-notes tr:last-child td { border-bottom: none; }
 /* Match the other scrollbars: the 3px thumb frame uses the box's OWN background
    (--surface-2 here, not the modal's --surface) so the thumb blends identically. */
 .update-notes::-webkit-scrollbar { width: var(--sb-width, 12px); }

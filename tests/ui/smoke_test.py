@@ -266,6 +266,26 @@ PROBE = """
       if (!done) out.errors.push('no import confirmation after the right password');
       await click('confirm-ok');
     }
+    // The changelog popup renders the release Markdown instead of dumping it, and
+    // grows with the text rather than clipping it.
+    await click('update-btn');
+    await click('update-version');
+    const notes = document.getElementById('update-modal-notes');
+    if (document.getElementById('update-modal').classList.contains('hidden')) {
+      out.errors.push('the changelog popup did not open');
+    } else {
+      if (!notes.querySelector('h3') || !notes.querySelector('li') || !notes.querySelector('table')) {
+        out.errors.push('the changelog is not rendered as markup');
+      }
+      if (/[#*`|]/.test(notes.textContent)) {
+        out.errors.push('raw Markdown left in the changelog: ' + notes.textContent.slice(0, 60));
+      }
+      if (notes.textContent.includes('9.9.9')) out.errors.push('the changelog repeats the version from its own title');
+      if (notes.scrollHeight > notes.clientHeight + 1 && getComputedStyle(notes).overflowY !== 'auto') {
+        out.errors.push('long release notes cannot be scrolled');
+      }
+      await click('update-modal-cancel');
+    }
   } catch (e) { out.errors.push('probe: ' + e.message); }
   for (const el of document.querySelectorAll('.overlay *, #expert-flags *')) {
     const r = el.getBoundingClientRect();

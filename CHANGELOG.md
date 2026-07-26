@@ -3,6 +3,14 @@
 All notable changes to **Prompt Saver**. Download the latest version from the
 [releases page](../../releases/latest).
 
+## Unreleased
+
+### Improved
+
+- The changelog in the update dialog is laid out instead of dumped: headings,
+  bullets, tables and highlighted terms, in a box that takes the height of the
+  release notes and scrolls only once they outgrow the window.
+
 ## 2.6.3 (2026-07-26)
 
 The backups window grew up: automatic backups can be switched off and now keep

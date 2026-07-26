@@ -47,7 +47,31 @@ const RESULTS = {
   missing_files: () => [],
   has_backup_password: () => true,
   find_duplicates: () => [],
-  check_update: () => null,
+  // A release body in the shape GitHub delivers it, so the changelog popup has real
+  // Markdown to render (heading, wrapped paragraph, table, bullets, bold, code, link).
+  check_update: () => ({
+    available: true,
+    version: "9.9.9",
+    url: "https://example.invalid/setup.exe",
+    skipped: false,
+    notes: [
+      "## Prompt Saver 9.9.9",
+      "",
+      "A short intro paragraph that the release notes",
+      "wrap over two source lines.",
+      "",
+      "### Downloads",
+      "",
+      "| File | Use it when |",
+      "|---|---|",
+      "| `setup.exe` | Installer |",
+      "",
+      "### Highlights",
+      "",
+      "- **Bold lead** — followed by ordinary text.",
+      "- A bullet with `code` and a [link](https://example.invalid).",
+    ].join("\n"),
+  }),
   get_prompt: (a) => PROMPTS.find((p) => p.id === (a && a.id)) || PROMPTS[0],
   // The copy commands report success; the UI skips everything that follows a copy
   // (feedback, history, auto-paste) when they come back falsy.

@@ -5912,10 +5912,73 @@ function bind() {
     install: $("update-modal-install"),
     close: $("update-modal-close"),
   };
+  // The release body arrives as Markdown. Render the part release notes actually use
+  // — headings, bullets, tables, bold and code — instead of dumping the raw source
+  // with its "###" and "**" into a monospace box. Everything is built node by node:
+  // the text comes from the network and must never reach innerHTML.
+  const renderNotes = (box, text, version) => {
+    box.textContent = "";
+    const inline = (target, s) => {
+      // A link has nowhere to go inside a dialog, so only its label survives.
+      const re = /\*\*(.+?)\*\*|`([^`]+?)`|\[(.+?)\]\([^)]*\)/g;
+      let last = 0, m;
+      while ((m = re.exec(s))) {
+        if (m.index > last) target.append(s.slice(last, m.index));
+        if (m[3] !== undefined) target.append(m[3]);
+        else {
+          const el = document.createElement(m[1] !== undefined ? "strong" : "code");
+          el.textContent = m[1] ?? m[2];
+          target.append(el);
+        }
+        last = re.lastIndex;
+      }
+      target.append(s.slice(last));
+    };
+    let list = null, table = null, para = null;
+    for (const raw of text.replace(/\r/g, "").split("\n")) {
+      const line = raw.trim();
+      if (!line) { list = table = para = null; continue; }
+      const head = /^#{1,6}\s+(.*)$/.exec(line);
+      const item = /^[-*+]\s+(.*)$/.exec(line);
+      const row = line.startsWith("|") && line.endsWith("|");
+      if (!item) list = null;
+      if (!row) table = null;
+      if (head || item || row) para = null;
+      if (head) {
+        // The dialog title already names the version, so its heading would only repeat it.
+        if (version && head[1].includes(version)) continue;
+        const h = document.createElement("h3");
+        h.textContent = head[1];
+        box.append(h);
+      } else if (item) {
+        if (!list) { list = document.createElement("ul"); box.append(list); }
+        const li = document.createElement("li");
+        inline(li, item[1]);
+        list.append(li);
+      } else if (row) {
+        const cells = line.slice(1, -1).split("|").map((c) => c.trim());
+        if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; // the |---|---| divider
+        if (!table) { table = document.createElement("table"); box.append(table); }
+        const tr = document.createElement("tr");
+        for (const c of cells) {
+          const cell = document.createElement(table.rows.length ? "td" : "th");
+          inline(cell, c);
+          tr.append(cell);
+        }
+        table.append(tr);
+      } else {
+        // Markdown wraps a paragraph over several lines; keep it as one.
+        if (para) para.append(" ");
+        else { para = document.createElement("p"); box.append(para); }
+        inline(para, line);
+      }
+    }
+  };
+
   const openUpdateModal = (info) => {
     offerUpdate(info);
     updateModal.title.textContent = t("updateAvailable").replace("{v}", info.version);
-    updateModal.notes.textContent = info.notes?.trim() || t("noChangelog");
+    renderNotes(updateModal.notes, info.notes?.trim() || t("noChangelog"), info.version || "");
     updateModal.warn.classList.toggle("hidden", !info.skipped);
     updateModal.root.classList.remove("hidden");
   };
